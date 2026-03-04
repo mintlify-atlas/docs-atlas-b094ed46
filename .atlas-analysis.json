@@ -1,0 +1,120 @@
+{
+  "projectType": "saas",
+  "projectName": "Resonance",
+  "projectDescription": "Open-source AI-powered text-to-speech and voice cloning platform built with Next.js, tRPC, and Chatterbox TTS",
+  "theme": "palm",
+  "primaryColor": "#6366f1",
+  "lightColor": "#818cf8",
+  "darkColor": "#4f46e5",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "quickstart", "architecture"]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/text-to-speech",
+              "features/voice-cloning",
+              "features/voice-library",
+              "features/generation-history",
+              "features/audio-player"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/environment-variables",
+              "configuration/database-setup",
+              "configuration/cloudflare-r2",
+              "configuration/clerk-auth",
+              "configuration/polar-billing",
+              "configuration/modal-deployment"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/overview",
+              "deployment/self-hosting",
+              "deployment/troubleshooting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": ["api/introduction", "api/authentication"]
+          },
+          {
+            "group": "tRPC Routers",
+            "pages": [
+              "api/voices",
+              "api/generations",
+              "api/billing"
+            ]
+          },
+          {
+            "group": "Chatterbox TTS",
+            "pages": [
+              "api/chatterbox-api",
+              "api/generation-parameters"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Usage",
+            "pages": [
+              "guides/generating-speech",
+              "guides/creating-custom-voices",
+              "guides/managing-organizations",
+              "guides/usage-billing"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "guides/project-structure",
+              "guides/database-schema",
+              "guides/extending-features"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Text-to-speech generation with adjustable creativity, variety, expression, and flow parameters",
+    "Zero-shot voice cloning from audio samples (10s minimum) - no fine-tuning required",
+    "20 built-in voices across 12 categories (audiobook, conversational, meditation, etc.)",
+    "Multi-tenant architecture with Clerk Organizations for team-based access",
+    "Usage-based billing with character metering via Polar",
+    "Generation history with preserved voice metadata and waveform visualization",
+    "Waveform audio player with WaveSurfer.js integration",
+    "Cloudflare R2 storage for audio files"
+  ],
+  "publicApiSurface": [
+    "voices.getAll({ query?: string })",
+    "voices.delete({ id: string })",
+    "generations.create({ text, voiceId, temperature?, topP?, topK?, repetitionPenalty? })",
+    "generations.getAll()",
+    "generations.getById({ id: string })",
+    "billing.getStatus()",
+    "billing.createCheckout()",
+    "billing.createPortalSession()",
+    "POST /api/audio/{generationId}",
+    "POST /api/voices/upload",
+    "Chatterbox TTS API: POST /generate"
+  ]
+}

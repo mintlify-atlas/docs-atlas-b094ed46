@@ -1,0 +1,315 @@
+---
+title: 'Billing API'
+description: 'Manage subscriptions and track usage with Polar'
+---
+
+## Overview
+
+The Billing API integrates with [Polar](https://polar.sh) to handle subscription management, checkout flows, and usage tracking. All billing operations are organization-scoped.
+
+## Get Billing Status
+
+Retrieve the current subscription status and estimated usage costs for an organization.
+
+```typescript
+trpc.billing.getStatus.useQuery();
+```
+
+### Response
+
+<ResponseField name="hasActiveSubscription" type="boolean" required>
+  Whether the organization has at least one active subscription
+</ResponseField>
+
+<ResponseField name="customerId" type="string | null" required>
+  Polar customer ID if the organization exists in Polar, otherwise `null`
+</ResponseField>
+
+<ResponseField name="estimatedCostCents" type="number" required>
+  Estimated cost in cents across all active subscriptions and meters. Summed from all subscription meters.
+</ResponseField>
+
+### Implementation
+
+<CodeGroup>
+```typescript src/trpc/routers/billing.ts
+getStatus: orgProcedure.query(async ({ ctx }) => {
+  try {
+    const customerState = await polar.customers.getStateExternal({
+      externalId: ctx.orgId,
+    });
+
+    const hasActiveSubscription =
+      (customerState.activeSubscriptions ?? []).length > 0;
+
+    // Sum up estimated costs from all meters across active subscriptions
+    let estimatedCostCents = 0;
+    for (const sub of customerState.activeSubscriptions ?? []) {
+      for (const meter of sub.meters ?? []) {
+        estimatedCostCents += meter.amount ?? 0;
+      }
+    }
+
+    return {
+      hasActiveSubscription,
+      customerId: customerState.id,
+      estimatedCostCents,
+    };
+  } catch {
+    // Customer doesn't exist yet in Polar
+    return {
+      hasActiveSubscription: false,
+      customerId: null,
+      estimatedCostCents: 0,
+    };
+  }
+}),
+```
+
+```typescript Example Usage
+import { trpc } from '@/lib/trpc';
+
+function BillingStatus() {
+  const { data: status } = trpc.billing.getStatus.useQuery();
+  
+  if (!status) return null;
+  
+  return (
+    <div>
+      <h2>Billing Status</h2>
+      {status.hasActiveSubscription ? (
+        <div>
+          <span className="badge">Active</span>
+          <p>
+            Estimated usage: ${(status.estimatedCostCents / 100).toFixed(2)}
+          </p>
+        </div>
+      ) : (
+        <div>
+          <span className="badge">No subscription</span>
+          <button>Subscribe Now</button>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+</CodeGroup>
+
+---
+
+## Create Checkout Session
+
+Create a Polar checkout session for subscribing to Resonance.
+
+```typescript
+trpc.billing.createCheckout.useMutation();
+```
+
+<Info>
+  This endpoint automatically creates a new customer in Polar if one doesn't exist for the organization.
+</Info>
+
+### Response
+
+<ResponseField name="checkoutUrl" type="string" required>
+  Polar checkout URL to redirect the user to. Includes the configured product and links back to your app on success.
+</ResponseField>
+
+### Implementation
+
+<CodeGroup>
+```typescript src/trpc/routers/billing.ts
+creatCheckout: orgProcedure.mutation(async ({ ctx }) => {
+  const result = await polar.checkouts.create({
+    products: [env.POLAR_PRODUCT_ID],
+    externalCustomerId: ctx.orgId,
+    successUrl: process.env.APP_URL,
+  });
+
+  if (!result.url) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Failed to create checkout session",
+    });
+  }
+
+  return { checkoutUrl: result.url };
+}),
+```
+
+```typescript Example Usage
+import { trpc } from '@/lib/trpc';
+import { useRouter } from 'next/navigation';
+
+function SubscribeButton() {
+  const router = useRouter();
+  const createCheckout = trpc.billing.createCheckout.useMutation({
+    onSuccess: (data) => {
+      // Redirect to Polar checkout
+      window.location.href = data.checkoutUrl;
+    },
+  });
+  
+  return (
+    <button 
+      onClick={() => createCheckout.mutate()}
+      disabled={createCheckout.isPending}
+    >
+      {createCheckout.isPending ? 'Loading...' : 'Subscribe Now'}
+    </button>
+  );
+}
+```
+</CodeGroup>
+
+---
+
+## Create Portal Session
+
+Create a Polar customer portal session for managing subscriptions, payment methods, and billing history.
+
+```typescript
+trpc.billing.createPortalSession.useMutation();
+```
+
+### Response
+
+<ResponseField name="portalUrl" type="string" required>
+  Polar customer portal URL where users can:
+  - View and manage subscriptions
+  - Update payment methods
+  - View billing history and invoices
+  - Cancel subscriptions
+</ResponseField>
+
+### Implementation
+
+<CodeGroup>
+```typescript src/trpc/routers/billing.ts
+createPortalSession: orgProcedure.mutation(async ({ ctx }) => {
+  const result = await polar.customerSessions.create({
+    externalCustomerId: ctx.orgId,
+  });
+
+  if (!result.customerPortalUrl) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Failed to create customer portal session",
+    });
+  }
+
+  return { portalUrl: result.customerPortalUrl };
+}),
+```
+
+```typescript Example Usage
+import { trpc } from '@/lib/trpc';
+
+function ManageBillingButton() {
+  const createPortal = trpc.billing.createPortalSession.useMutation({
+    onSuccess: (data) => {
+      // Open portal in new tab
+      window.open(data.portalUrl, '_blank');
+    },
+  });
+  
+  return (
+    <button 
+      onClick={() => createPortal.mutate()}
+      disabled={createPortal.isPending}
+    >
+      Manage Billing
+    </button>
+  );
+}
+```
+</CodeGroup>
+
+## Error Codes
+
+| Code | Description | When It Occurs |
+|------|-------------|----------------|
+| `UNAUTHORIZED` | User not authenticated | Missing or invalid session |
+| `FORBIDDEN` | Missing organization | User not in an organization |
+| `INTERNAL_SERVER_ERROR` | Polar API error | Failed to create checkout/portal session |
+
+## Subscription Flow
+
+<Steps>
+  <Step title="Check Status">
+    Call `billing.getStatus` to determine if user has an active subscription
+  </Step>
+  
+  <Step title="Create Checkout">
+    If no subscription exists, call `billing.createCheckout` and redirect to the returned URL
+  </Step>
+  
+  <Step title="User Subscribes">
+    User completes payment on Polar's checkout page
+  </Step>
+  
+  <Step title="Webhook Notification">
+    Polar sends webhook to your app (configure in Polar dashboard)
+  </Step>
+  
+  <Step title="User Redirected">
+    User returns to your app via the `successUrl`
+  </Step>
+  
+  <Step title="Status Updates">
+    `billing.getStatus` now returns `hasActiveSubscription: true`
+  </Step>
+</Steps>
+
+## Usage Metering
+
+Resonance tracks TTS generation usage and reports it to Polar:
+
+```typescript
+// Automatically called after each generation
+polar.events.ingest({
+  events: [{
+    name: "tts_generation",
+    externalCustomerId: ctx.orgId,
+    metadata: { characters: input.text.length },
+    timestamp: new Date(),
+  }],
+});
+```
+
+### Metering Details
+
+- **Event Name**: `tts_generation`
+- **Metric**: Character count of the input text
+- **Timing**: Fire-and-forget after successful generation
+- **Failure Handling**: Silent failures to avoid blocking user experience
+
+### Viewing Usage
+
+Estimated costs are calculated by summing all meter amounts across active subscriptions:
+
+```typescript
+let estimatedCostCents = 0;
+for (const sub of customerState.activeSubscriptions ?? []) {
+  for (const meter of sub.meters ?? []) {
+    estimatedCostCents += meter.amount ?? 0;
+  }
+}
+```
+
+<Info>
+  The estimated cost is calculated in real-time based on current meter readings. Actual billing occurs according to your Polar product configuration.
+</Info>
+
+## Integration Setup
+
+To configure billing, ensure these environment variables are set:
+
+```bash .env
+POLAR_ACCESS_TOKEN=polar_at_xxx
+POLAR_PRODUCT_ID=prod_xxx
+APP_URL=https://your-app.com
+```
+
+And configure webhooks in the Polar dashboard to receive subscription events.

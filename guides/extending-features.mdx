@@ -1,0 +1,805 @@
+---
+title: Extending Features
+description: How to add new voices, modify TTS parameters, and extend tRPC routers
+icon: puzzle-piece
+---
+
+This guide shows you how to extend Resonance with new features, voices, TTS parameters, and API endpoints.
+
+## Adding System Voices
+
+System voices are pre-loaded voices available to all users. Follow this workflow to add new system voices.
+
+<Steps>
+  <Step title="Add Voice Audio File">
+    Place the audio file in `scripts/system-voices/`:
+    
+    ```bash
+    scripts/system-voices/
+    ├── Aaron.wav
+    ├── Abigail.wav
+    └── NewVoice.wav  # Your new voice
+    ```
+    
+    **Requirements**:
+    - Format: WAV, MP3, or other audio format
+    - Duration: Minimum 10 seconds
+    - Size: Under 20 MB
+  </Step>
+  
+  <Step title="Add Voice Metadata">
+    Edit `scripts/seed-system-voices.ts` and add metadata:
+    
+    ```typescript
+    const systemVoiceMetadata: Record<string, VoiceMetadata> = {
+      // ... existing voices
+      NewVoice: {
+        description: "Professional and authoritative with clear diction",
+        category: "CORPORATE",
+        language: "en-US",
+      },
+    };
+    ```
+  </Step>
+  
+  <Step title="Register Voice Name">
+    Add to the canonical list in `src/features/voices/data/voice-scoping.ts`:
+    
+    ```typescript
+    export const CANONICAL_SYSTEM_VOICE_NAMES = [
+      "Aaron",
+      "Abigail",
+      // ...
+      "NewVoice",
+    ] as const;
+    ```
+  </Step>
+  
+  <Step title="Run Seed Script">
+    ```bash
+    npm run db:seed
+    ```
+    
+    This will:
+    - Create database record
+    - Upload audio to R2
+    - Update voice with R2 object key
+  </Step>
+</Steps>
+
+<Note>
+  The seed script is idempotent - it updates existing voices instead of creating duplicates.
+</Note>
+
+## Adding Custom Voice Categories
+
+Voice categories help users filter and discover voices.
+
+<Steps>
+  <Step title="Update Prisma Schema">
+    Edit `prisma/schema.prisma` and add to the enum:
+    
+    ```prisma
+    enum VoiceCategory {
+      AUDIOBOOK
+      CONVERSATIONAL
+      // ... existing categories
+      DOCUMENTARY     // New category
+      EDUCATIONAL     // New category
+    }
+    ```
+  </Step>
+  
+  <Step title="Create Migration">
+    ```bash
+    npx prisma migrate dev --name add_voice_categories
+    npx prisma generate
+    ```
+  </Step>
+  
+  <Step title="Add Category Labels">
+    Update `src/features/voices/data/voice-categories.ts`:
+    
+    ```typescript
+    export const VOICE_CATEGORY_LABELS: Record<VoiceCategory, string> = {
+      AUDIOBOOK: "Audiobook",
+      // ... existing labels
+      DOCUMENTARY: "Documentary",
+      EDUCATIONAL: "Educational",
+    };
+    ```
+  </Step>
+  
+  <Step title="Update UI (Optional)">
+    Categories are automatically available in dropdowns via `VOICE_CATEGORIES` array.
+  </Step>
+</Steps>
+
+## Modifying TTS Parameters
+
+TTS parameters control the generation quality and characteristics.
+
+### Current Parameters
+
+<CodeGroup>
+```typescript Generation Schema
+// src/trpc/routers/generations.ts
+create: orgProcedure
+  .input(
+    z.object({
+      text: z.string().min(1).max(TEXT_MAX_LENGTH),
+      voiceId: z.string().min(1),
+      temperature: z.number().min(0).max(2).default(0.8),
+      topP: z.number().min(0).max(1).default(0.95),
+      topK: z.number().min(1).max(10000).default(1000),
+      repetitionPenalty: z.number().min(1).max(2).default(1.2),
+    })
+  )
+```
+
+```prisma Database Storage
+model Generation {
+  temperature       Float
+  topP              Float
+  topK              Int
+  repetitionPenalty Float
+  // ...
+}
+```
+</CodeGroup>
+
+### Adding New Parameters
+
+Example: Adding a `speed` parameter to control speech rate.
+
+<Steps>
+  <Step title="Update Database Schema">
+    ```prisma
+    model Generation {
+      // ... existing fields
+      speed Float @default(1.0)  // 0.5 = slow, 2.0 = fast
+    }
+    ```
+    
+    ```bash
+    npx prisma migrate dev --name add_generation_speed
+    npx prisma generate
+    ```
+  </Step>
+  
+  <Step title="Update tRPC Input Schema">
+    ```typescript
+    // src/trpc/routers/generations.ts
+    create: orgProcedure
+      .input(
+        z.object({
+          // ... existing parameters
+          speed: z.number().min(0.5).max(2.0).default(1.0),
+        })
+      )
+    ```
+  </Step>
+  
+  <Step title="Pass to TTS API">
+    ```typescript
+    const { data, error } = await chatterbox.POST("/generate", {
+      body: {
+        // ... existing params
+        speed: input.speed,
+      },
+    });
+    ```
+  </Step>
+  
+  <Step title="Store in Database">
+    ```typescript
+    const generation = await prisma.generation.create({
+      data: {
+        // ... existing fields
+        speed: input.speed,
+      },
+    });
+    ```
+  </Step>
+  
+  <Step title="Add UI Control">
+    Update the settings panel in `src/features/text-to-speech/components/settings-panel-settings.tsx`:
+    
+    ```tsx
+    <FormField
+      control={form.control}
+      name="speed"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>Speech Speed</FormLabel>
+          <FormControl>
+            <Slider
+              min={0.5}
+              max={2.0}
+              step={0.1}
+              value={[field.value]}
+              onValueChange={(vals) => field.onChange(vals[0])}
+            />
+          </FormControl>
+          <FormDescription>
+            0.5 = slow, 1.0 = normal, 2.0 = fast
+          </FormDescription>
+        </FormItem>
+      )}
+    />
+    ```
+  </Step>
+</Steps>
+
+<Info>
+  Parameters are automatically type-safe across the stack thanks to tRPC and Prisma.
+</Info>
+
+## Creating New tRPC Routers
+
+Add new API endpoints by creating tRPC routers.
+
+### Example: Adding a "Favorites" Feature
+
+<Steps>
+  <Step title="Create Database Model">
+    ```prisma
+    model Favorite {
+      id String @id @default(cuid())
+      
+      orgId String
+      
+      generationId String
+      generation   Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
+      
+      createdAt DateTime @default(now())
+      
+      @@unique([orgId, generationId])
+      @@index([orgId])
+    }
+    
+    model Generation {
+      // ... existing fields
+      favorites Favorite[]
+    }
+    ```
+    
+    ```bash
+    npx prisma migrate dev --name add_favorites
+    npx prisma generate
+    ```
+  </Step>
+  
+  <Step title="Create Router File">
+    Create `src/trpc/routers/favorites.ts`:
+    
+    ```typescript
+    import { z } from "zod";
+    import { TRPCError } from "@trpc/server";
+    import { prisma } from "@/lib/db";
+    import { createTRPCRouter, orgProcedure } from "../init";
+    
+    export const favoritesRouter = createTRPCRouter({
+      getAll: orgProcedure.query(async ({ ctx }) => {
+        const favorites = await prisma.favorite.findMany({
+          where: { orgId: ctx.orgId },
+          include: {
+            generation: {
+              select: {
+                id: true,
+                text: true,
+                voiceName: true,
+                createdAt: true,
+              },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+        });
+        
+        return favorites;
+      }),
+      
+      toggle: orgProcedure
+        .input(z.object({ generationId: z.string() }))
+        .mutation(async ({ ctx, input }) => {
+          // Check if already favorited
+          const existing = await prisma.favorite.findUnique({
+            where: {
+              orgId_generationId: {
+                orgId: ctx.orgId,
+                generationId: input.generationId,
+              },
+            },
+          });
+          
+          if (existing) {
+            // Remove favorite
+            await prisma.favorite.delete({
+              where: { id: existing.id },
+            });
+            return { favorited: false };
+          } else {
+            // Add favorite
+            await prisma.favorite.create({
+              data: {
+                orgId: ctx.orgId,
+                generationId: input.generationId,
+              },
+            });
+            return { favorited: true };
+          }
+        }),
+    });
+    ```
+  </Step>
+  
+  <Step title="Register Router">
+    Update `src/trpc/routers/_app.ts`:
+    
+    ```typescript
+    import { favoritesRouter } from './favorites';
+    
+    export const appRouter = createTRPCRouter({
+      voices: voicesRouter,
+      generations: generationsRouter,
+      billing: billingRouter,
+      favorites: favoritesRouter,  // Add new router
+    });
+    ```
+  </Step>
+  
+  <Step title="Use in Client">
+    ```typescript
+    // In a component
+    import { trpc } from "@/trpc/client";
+    
+    function FavoritesPanel() {
+      const { data: favorites } = trpc.favorites.getAll.useQuery();
+      const toggleMutation = trpc.favorites.toggle.useMutation();
+      
+      const handleToggle = (generationId: string) => {
+        toggleMutation.mutate({ generationId });
+      };
+      
+      return (
+        <div>
+          {favorites?.map((fav) => (
+            <div key={fav.id}>
+              {fav.generation.text}
+              <button onClick={() => handleToggle(fav.generationId)}>
+                Unfavorite
+              </button>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  tRPC automatically infers types, so `favorites` is fully typed without manual type annotations.
+</Note>
+
+## Adding Feature Modules
+
+Create self-contained feature modules for new functionality.
+
+### Example: Adding an "Analytics" Feature
+
+<Steps>
+  <Step title="Create Feature Directory">
+    ```bash
+    mkdir -p src/features/analytics/{components,views,hooks,data}
+    ```
+  </Step>
+  
+  <Step title="Create Data Layer">
+    ```typescript
+    // src/features/analytics/data/constants.ts
+    export const DATE_RANGE_OPTIONS = [
+      { label: "Last 7 days", value: 7 },
+      { label: "Last 30 days", value: 30 },
+      { label: "Last 90 days", value: 90 },
+    ] as const;
+    ```
+  </Step>
+  
+  <Step title="Create Hook">
+    ```typescript
+    // src/features/analytics/hooks/use-analytics.ts
+    import { trpc } from "@/trpc/client";
+    
+    export function useAnalytics(dateRange: number) {
+      const { data, isLoading } = trpc.analytics.getStats.useQuery({
+        days: dateRange,
+      });
+      
+      return { stats: data, isLoading };
+    }
+    ```
+  </Step>
+  
+  <Step title="Create Components">
+    ```typescript
+    // src/features/analytics/components/stats-card.tsx
+    export function StatsCard({ title, value, trend }: Props) {
+      return (
+        <Card>
+          <CardHeader>
+            <CardTitle>{title}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">{value}</div>
+            <div className="text-sm text-muted-foreground">{trend}</div>
+          </CardContent>
+        </Card>
+      );
+    }
+    ```
+  </Step>
+  
+  <Step title="Create View">
+    ```typescript
+    // src/features/analytics/views/analytics-view.tsx
+    import { useState } from "react";
+    import { StatsCard } from "../components/stats-card";
+    import { useAnalytics } from "../hooks/use-analytics";
+    import { DATE_RANGE_OPTIONS } from "../data/constants";
+    
+    export function AnalyticsView() {
+      const [range, setRange] = useState(30);
+      const { stats, isLoading } = useAnalytics(range);
+      
+      if (isLoading) return <div>Loading...</div>;
+      
+      return (
+        <div>
+          <h1>Analytics</h1>
+          <div className="grid grid-cols-3 gap-4">
+            <StatsCard
+              title="Total Generations"
+              value={stats.totalGenerations}
+              trend="+12% from last period"
+            />
+            {/* More stats */}
+          </div>
+        </div>
+      );
+    }
+    ```
+  </Step>
+  
+  <Step title="Add Route">
+    ```tsx
+    // src/app/(dashboard)/analytics/page.tsx
+    import type { Metadata } from "next";
+    import { AnalyticsView } from "@/features/analytics/views/analytics-view";
+    import { trpc, HydrateClient, prefetch } from "@/trpc/server";
+    
+    export const metadata: Metadata = { title: "Analytics" };
+    
+    export default async function AnalyticsPage() {
+      prefetch(trpc.analytics.getStats.queryOptions({ days: 30 }));
+      
+      return (
+        <HydrateClient>
+          <AnalyticsView />
+        </HydrateClient>
+      );
+    }
+    ```
+  </Step>
+</Steps>
+
+## Extending Voice Upload
+
+### Adding Voice Preprocessing
+
+Example: Normalize audio volume before upload.
+
+<CodeGroup>
+```typescript Audio Processing Utility
+// src/lib/audio-processing.ts
+import { exec } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
+
+export async function normalizeAudio(inputBuffer: Buffer): Promise<Buffer> {
+  // Use ffmpeg to normalize audio
+  const tempInput = `/tmp/input-${Date.now()}.wav`;
+  const tempOutput = `/tmp/output-${Date.now()}.wav`;
+  
+  await fs.writeFile(tempInput, inputBuffer);
+  
+  await execAsync(
+    `ffmpeg -i ${tempInput} -af loudnorm ${tempOutput}`
+  );
+  
+  const normalizedBuffer = await fs.readFile(tempOutput);
+  
+  // Cleanup
+  await fs.unlink(tempInput);
+  await fs.unlink(tempOutput);
+  
+  return normalizedBuffer;
+}
+```
+
+```typescript Integration in API Route
+// src/app/api/voices/create/route.ts
+import { normalizeAudio } from "@/lib/audio-processing";
+
+export async function POST(request: Request) {
+  // ... validation
+  
+  const fileBuffer = await request.arrayBuffer();
+  let processedBuffer = Buffer.from(fileBuffer);
+  
+  // Normalize audio before upload
+  try {
+    processedBuffer = await normalizeAudio(processedBuffer);
+  } catch (error) {
+    return Response.json(
+      { error: "Audio processing failed" },
+      { status: 422 }
+    );
+  }
+  
+  // ... continue with upload
+  await uploadAudio({ buffer: processedBuffer, key, contentType });
+}
+```
+</CodeGroup>
+
+### Adding Voice Metadata Fields
+
+Example: Track voice gender and age range.
+
+<Steps>
+  <Step title="Update Schema">
+    ```prisma
+    enum VoiceGender {
+      MALE
+      FEMALE
+      NEUTRAL
+    }
+    
+    enum VoiceAgeRange {
+      CHILD
+      YOUNG_ADULT
+      MIDDLE_AGED
+      SENIOR
+    }
+    
+    model Voice {
+      // ... existing fields
+      gender    VoiceGender?   @default(NEUTRAL)
+      ageRange  VoiceAgeRange? @default(MIDDLE_AGED)
+    }
+    ```
+  </Step>
+  
+  <Step title="Update Upload Form">
+    ```typescript
+    const createVoiceSchema = z.object({
+      name: z.string().min(1),
+      category: z.enum(VOICE_CATEGORIES),
+      language: z.string().min(1),
+      description: z.string().nullish(),
+      gender: z.enum(["MALE", "FEMALE", "NEUTRAL"]).default("NEUTRAL"),
+      ageRange: z.enum(["CHILD", "YOUNG_ADULT", "MIDDLE_AGED", "SENIOR"]),
+    });
+    ```
+  </Step>
+  
+  <Step title="Use in Filters">
+    ```typescript
+    const maleVoices = await prisma.voice.findMany({
+      where: {
+        gender: "MALE",
+        ageRange: "MIDDLE_AGED",
+      },
+    });
+    ```
+  </Step>
+</Steps>
+
+## Adding Middleware
+
+### Example: Rate Limiting Middleware
+
+<CodeGroup>
+```typescript Rate Limit Middleware
+// src/trpc/middleware/rate-limit.ts
+import { TRPCError } from "@trpc/server";
+import { middleware } from "../init";
+
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+const RATE_LIMIT = 100; // requests per window
+const WINDOW_MS = 60 * 1000; // 1 minute
+
+export const rateLimitMiddleware = middleware(async ({ ctx, next }) => {
+  const key = ctx.orgId || ctx.userId || "anonymous";
+  const now = Date.now();
+  
+  const current = rateLimitMap.get(key);
+  
+  if (current && now < current.resetAt) {
+    if (current.count >= RATE_LIMIT) {
+      throw new TRPCError({
+        code: "TOO_MANY_REQUESTS",
+        message: "Rate limit exceeded",
+      });
+    }
+    current.count++;
+  } else {
+    rateLimitMap.set(key, {
+      count: 1,
+      resetAt: now + WINDOW_MS,
+    });
+  }
+  
+  return next();
+});
+```
+
+```typescript Apply to Procedure
+// src/trpc/routers/generations.ts
+import { rateLimitMiddleware } from "../middleware/rate-limit";
+
+export const generationsRouter = createTRPCRouter({
+  create: orgProcedure
+    .use(rateLimitMiddleware)
+    .input(/* ... */)
+    .mutation(/* ... */),
+});
+```
+</CodeGroup>
+
+## Testing Extensions
+
+### Unit Testing tRPC Routers
+
+<CodeGroup>
+```typescript Test Setup
+// tests/trpc/favorites.test.ts
+import { describe, it, expect, beforeEach } from "vitest";
+import { createCallerFactory } from "@/trpc/init";
+import { appRouter } from "@/trpc/routers/_app";
+
+const createCaller = createCallerFactory(appRouter);
+
+describe("favoritesRouter", () => {
+  const caller = createCaller({
+    userId: "user_123",
+    orgId: "org_456",
+  });
+  
+  it("should toggle favorite", async () => {
+    const result = await caller.favorites.toggle({
+      generationId: "gen_789",
+    });
+    
+    expect(result.favorited).toBe(true);
+  });
+  
+  it("should get all favorites", async () => {
+    const favorites = await caller.favorites.getAll();
+    
+    expect(Array.isArray(favorites)).toBe(true);
+  });
+});
+```
+</CodeGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Type Safety First" icon="shield-check">
+    Always define Zod schemas for inputs and rely on Prisma for data types.
+  </Card>
+  
+  <Card title="Feature Isolation" icon="cube">
+    Keep features self-contained. Avoid cross-feature imports.
+  </Card>
+  
+  <Card title="Error Handling" icon="triangle-exclamation">
+    Use appropriate tRPC error codes:
+    - `UNAUTHORIZED`: Missing auth
+    - `FORBIDDEN`: Insufficient permissions
+    - `NOT_FOUND`: Resource doesn't exist
+    - `BAD_REQUEST`: Invalid input
+  </Card>
+  
+  <Card title="Database Indexes" icon="bolt">
+    Add indexes for commonly filtered fields:
+    ```prisma
+    @@index([orgId, createdAt])
+    ```
+  </Card>
+</CardGroup>
+
+## Common Patterns
+
+### Optimistic Updates
+
+```typescript
+const utils = trpc.useUtils();
+const toggleFavorite = trpc.favorites.toggle.useMutation({
+  onMutate: async ({ generationId }) => {
+    // Cancel outgoing refetches
+    await utils.favorites.getAll.cancel();
+    
+    // Snapshot previous value
+    const previous = utils.favorites.getAll.getData();
+    
+    // Optimistically update
+    utils.favorites.getAll.setData(undefined, (old) => [
+      ...old,
+      { generationId, createdAt: new Date() },
+    ]);
+    
+    return { previous };
+  },
+  onError: (err, variables, context) => {
+    // Rollback on error
+    utils.favorites.getAll.setData(undefined, context.previous);
+  },
+  onSettled: () => {
+    // Refetch after mutation
+    utils.favorites.getAll.invalidate();
+  },
+});
+```
+
+### Infinite Queries
+
+```typescript
+// Router
+getInfinite: orgProcedure
+  .input(
+    z.object({
+      limit: z.number().min(1).max(100).default(20),
+      cursor: z.string().optional(),
+    })
+  )
+  .query(async ({ ctx, input }) => {
+    const items = await prisma.generation.findMany({
+      where: { orgId: ctx.orgId },
+      take: input.limit + 1,
+      cursor: input.cursor ? { id: input.cursor } : undefined,
+    });
+    
+    let nextCursor: string | undefined = undefined;
+    if (items.length > input.limit) {
+      const nextItem = items.pop();
+      nextCursor = nextItem.id;
+    }
+    
+    return { items, nextCursor };
+  });
+
+// Client
+const { data, fetchNextPage, hasNextPage } =
+  trpc.generations.getInfinite.useInfiniteQuery(
+    { limit: 20 },
+    {
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+    }
+  );
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Project Structure" icon="folder-tree" href="/guides/project-structure">
+    Review codebase organization patterns
+  </Card>
+  <Card title="Database Schema" icon="database" href="/guides/database-schema">
+    Understand data models and relationships
+  </Card>
+</CardGroup>

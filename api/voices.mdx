@@ -1,0 +1,262 @@
+---
+title: 'Voices API'
+description: 'Manage custom and system voice clones'
+---
+
+## Overview
+
+The Voices API provides endpoints for retrieving and managing voice clones. Voices come in two variants:
+
+- **SYSTEM** - Pre-trained voices available to all users
+- **CUSTOM** - User-uploaded voices scoped to an organization
+
+## Get All Voices
+
+Retrieve all available voices with optional search filtering.
+
+```typescript
+trpc.voices.getAll.useQuery({ query: "narrator" });
+```
+
+### Input Schema
+
+<ParamField path="query" type="string" optional>
+  Case-insensitive search term to filter voices by name or description
+</ParamField>
+
+### Response
+
+<ResponseField name="custom" type="Voice[]">
+  Array of custom voices owned by the organization
+  
+  <Expandable title="Voice object">
+    <ResponseField name="id" type="string" required>
+      Unique voice identifier
+    </ResponseField>
+    
+    <ResponseField name="name" type="string" required>
+      Display name of the voice
+    </ResponseField>
+    
+    <ResponseField name="description" type="string | null">
+      Optional description of the voice characteristics
+    </ResponseField>
+    
+    <ResponseField name="category" type="string | null">
+      Voice category (e.g., "narrator", "character", "commercial")
+    </ResponseField>
+    
+    <ResponseField name="language" type="string | null">
+      Primary language of the voice
+    </ResponseField>
+    
+    <ResponseField name="variant" type="'CUSTOM' | 'SYSTEM'" required>
+      Voice type (always "CUSTOM" in this array)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="system" type="Voice[]">
+  Array of system voices available to all users
+  
+  <Expandable title="Same Voice object structure as custom">
+    Contains the same fields as custom voices, with `variant` always set to "SYSTEM"
+  </Expandable>
+</ResponseField>
+
+### Implementation
+
+<CodeGroup>
+```typescript src/trpc/routers/voices.ts
+export const voicesRouter = createTRPCRouter({
+  getAll: orgProcedure
+    .input(
+      z
+        .object({
+          query: z.string().trim().optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      const searchFilter = input?.query
+        ? {
+          OR: [
+            { 
+              name: { 
+                contains: input.query, mode: "insensitive" as const
+              } 
+            },
+            {
+              description: {
+                contains: input.query,
+                mode: "insensitive" as const,
+              },
+            },
+          ],
+        }
+        : {};
+
+      const [custom, system] = await Promise.all([
+        prisma.voice.findMany({
+          where: {
+            variant: "CUSTOM",
+            orgId: ctx.orgId,
+            ...searchFilter,
+          },
+          orderBy: { createdAt: "desc" },
+        }),
+        prisma.voice.findMany({
+          where: {
+            variant: "SYSTEM",
+            ...searchFilter,
+          },
+          orderBy: { name: "asc" },
+        }),
+      ]);
+
+      return { custom, system };
+    }),
+});
+```
+
+```typescript Example Usage
+import { trpc } from '@/lib/trpc';
+
+function VoiceSelector() {
+  // Get all voices
+  const { data } = trpc.voices.getAll.useQuery();
+  
+  // Search for specific voices
+  const { data: searchResults } = trpc.voices.getAll.useQuery({
+    query: "narrator"
+  });
+  
+  return (
+    <div>
+      <h2>Custom Voices ({data?.custom.length})</h2>
+      {data?.custom.map(voice => (
+        <div key={voice.id}>{voice.name}</div>
+      ))}
+      
+      <h2>System Voices ({data?.system.length})</h2>
+      {data?.system.map(voice => (
+        <div key={voice.id}>{voice.name}</div>
+      ))}
+    </div>
+  );
+}
+```
+</CodeGroup>
+
+---
+
+## Delete Voice
+
+Delete a custom voice owned by the organization.
+
+```typescript
+trpc.voices.delete.useMutation();
+```
+
+<Warning>
+  Only **CUSTOM** voices can be deleted. System voices are protected and will return a `NOT_FOUND` error if deletion is attempted.
+</Warning>
+
+### Input Schema
+
+<ParamField path="id" type="string" required>
+  ID of the custom voice to delete
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  Returns `true` when deletion is successful
+</ResponseField>
+
+### Implementation
+
+<CodeGroup>
+```typescript src/trpc/routers/voices.ts
+delete: orgProcedure
+  .input(z.object({ id: z.string() }))
+  .mutation(async ({ ctx, input }) => {
+    const voice = await prisma.voice.findUnique({
+      where: {
+        id: input.id,
+        variant: "CUSTOM",
+        orgId: ctx.orgId,
+      },
+      select: { id: true, r2ObjectKey: true },
+    });
+
+    if (!voice) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Voice not found",
+      });
+    }
+
+    await prisma.voice.delete({ where: { id: voice.id } });
+
+    if (voice.r2ObjectKey) {
+      // Delete audio file from R2 storage
+      await deleteAudio(voice.r2ObjectKey).catch(() => {});
+    }
+
+    return { success: true };
+  }),
+```
+
+```typescript Example Usage
+import { trpc } from '@/lib/trpc';
+
+function DeleteVoiceButton({ voiceId }: { voiceId: string }) {
+  const utils = trpc.useUtils();
+  const deleteMutation = trpc.voices.delete.useMutation({
+    onSuccess: () => {
+      // Invalidate and refetch voices list
+      utils.voices.getAll.invalidate();
+    },
+  });
+  
+  const handleDelete = async () => {
+    try {
+      await deleteMutation.mutateAsync({ id: voiceId });
+      console.log('Voice deleted successfully');
+    } catch (error) {
+      console.error('Failed to delete voice:', error);
+    }
+  };
+  
+  return (
+    <button 
+      onClick={handleDelete}
+      disabled={deleteMutation.isPending}
+    >
+      {deleteMutation.isPending ? 'Deleting...' : 'Delete Voice'}
+    </button>
+  );
+}
+```
+</CodeGroup>
+
+## Error Codes
+
+| Code | Description | When It Occurs |
+|------|-------------|----------------|
+| `UNAUTHORIZED` | User not authenticated | Missing or invalid session |
+| `FORBIDDEN` | Missing organization context | User not in an organization |
+| `NOT_FOUND` | Voice not found | Voice doesn't exist, is a system voice, or belongs to another org |
+
+## Storage Notes
+
+- Custom voice audio files are stored in Cloudflare R2
+- Audio files are stored with the key pattern: `voices/custom/{orgId}/{voiceId}`
+- When a voice is deleted, the database record is removed immediately
+- The associated R2 audio file is deleted asynchronously (fire-and-forget)
+- Failed R2 deletions are silently caught to avoid blocking the response
+
+<Info>
+  In production, consider implementing background jobs, retries, or cron jobs for more robust audio file cleanup.
+</Info>

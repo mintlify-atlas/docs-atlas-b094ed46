@@ -1,0 +1,433 @@
+---
+title: 'Troubleshooting'
+description: 'Common deployment issues and solutions for Resonance'
+---
+
+## Modal Issues
+
+### Cold Starts
+
+**Problem**: First TTS request after inactivity takes 15-30 seconds and may timeout.
+
+**Cause**: Modal provisions a GPU container on-demand. The Chatterbox model is ~3GB and takes time to load into VRAM.
+
+<Accordion title="Solution: Increase Client Timeout">
+  Configure your HTTP client to allow longer timeouts for the first request:
+  
+  ```typescript src/lib/chatterbox.ts
+  import createClient from "openapi-fetch";
+  
+  const client = createClient({
+    baseUrl: env.CHATTERBOX_API_URL,
+    headers: {
+      "X-Api-Key": env.CHATTERBOX_API_KEY,
+    },
+    // Increase timeout for cold starts
+    signal: AbortSignal.timeout(45000), // 45 seconds
+  });
+  ```
+  
+  Or handle cold starts gracefully in your UI:
+  
+  ```typescript
+  try {
+    const audio = await generateSpeech(prompt, voiceKey);
+  } catch (error) {
+    if (error.name === 'TimeoutError') {
+      // Retry after cold start
+      const audio = await generateSpeech(prompt, voiceKey);
+    }
+  }
+  ```
+</Accordion>
+
+<Accordion title="Solution: Keep Modal Warm">
+  Send periodic health checks to prevent scale-down:
+  
+  ```typescript
+  // cron job or background task
+  setInterval(async () => {
+    await fetch(env.CHATTERBOX_API_URL + "/docs", {
+      headers: { "X-Api-Key": env.CHATTERBOX_API_KEY },
+    });
+  }, 4 * 60 * 1000); // Every 4 minutes (before 5min scaledown)
+  ```
+  
+  <Warning>
+    This increases Modal costs but ensures sub-second response times. The scale-down window is configured at `chatterbox_tts.py:85`.
+  </Warning>
+</Accordion>
+
+<Accordion title="Solution: Optimize Scale-Down Window">
+  Adjust the `scaledown_window` in `chatterbox_tts.py`:
+  
+  ```python chatterbox_tts.py
+  @app.cls(
+      gpu="a10g",
+      scaledown_window=60 * 15,  # 15 minutes instead of 5
+      secrets=[...],
+  )
+  ```
+  
+  Redeploy with `modal deploy chatterbox_tts.py`.
+</Accordion>
+
+### Modal Deployment Fails
+
+**Problem**: `modal deploy` fails with authentication or permission errors.
+
+**Solutions**:
+
+<Steps>
+  <Step title="Check Authentication">
+    ```bash
+    modal setup
+    ```
+    
+    Re-authenticate with your Modal account.
+  </Step>
+
+  <Step title="Verify Secrets Exist">
+    ```bash
+    modal secret list
+    ```
+    
+    Ensure `cloudflare-r2`, `chatterbox-api-key`, and `hf-token` are present.
+  </Step>
+
+  <Step title="Check R2 Credentials in Script">
+    Verify `R2_BUCKET_NAME` and `R2_ACCOUNT_ID` in `chatterbox_tts.py:23-24` match your Cloudflare R2 setup exactly.
+  </Step>
+</Steps>
+
+### Voice Not Found Error
+
+**Problem**: Modal returns `Voice not found at 'voices/system/...'`.
+
+**Cause**: The R2 bucket mount can't find the voice file, or the path is incorrect.
+
+<Accordion title="Verify Voice Exists in R2">
+  Check your R2 bucket contains the voice files:
+  
+  ```bash
+  # Using AWS CLI with R2
+  aws s3 ls s3://your-bucket-name/voices/system/ \
+    --endpoint-url https://your-account-id.r2.cloudflarestorage.com
+  ```
+  
+  System voices should be seeded by `npx prisma db seed`.
+</Accordion>
+
+<Accordion title="Check Database Records">
+  Verify voices have `r2ObjectKey` populated:
+  
+  ```bash
+  npx prisma studio
+  ```
+  
+  Look at the `Voice` table. Each voice should have an `r2ObjectKey` like `voices/system/<id>` or `voices/custom/<id>`.
+</Accordion>
+
+<Accordion title="Re-run Seed Script">
+  ```bash
+  npx prisma db seed
+  ```
+  
+  This uploads all 20 system voices from `scripts/system-voices/*.wav` to R2 and updates the database.
+</Accordion>
+
+### Modal API Key Invalid
+
+**Problem**: Modal returns `403 Invalid API key`.
+
+**Solution**: The `X-Api-Key` header must match the `CHATTERBOX_API_KEY` secret in Modal:
+
+```bash
+# Update the secret
+modal secret create chatterbox-api-key \
+  CHATTERBOX_API_KEY="your-new-key" \
+  --force
+
+# Update your app's environment variable
+CHATTERBOX_API_KEY="your-new-key"
+```
+
+Redeploy Modal: `modal deploy chatterbox_tts.py`
+
+## Database Issues
+
+### Migration Fails
+
+**Problem**: `npx prisma migrate deploy` fails with connection errors.
+
+<Accordion title="Check DATABASE_URL">
+  Verify the connection string format:
+  
+  ```bash
+  # Should look like:
+  postgresql://user:password@host:5432/database?sslmode=require
+  
+  # Test connection
+  npx prisma db execute --stdin <<< "SELECT 1;"
+  ```
+</Accordion>
+
+<Accordion title="SSL Mode Required">
+  Most managed Postgres providers require SSL:
+  
+  ```bash
+  DATABASE_URL="postgresql://...?sslmode=require"
+  ```
+</Accordion>
+
+<Accordion title="Connection Pooling">
+  Prisma Postgres uses connection pooling by default. Other providers may need:
+  
+  ```bash
+  # With pgBouncer or Supabase pooler
+  DATABASE_URL="postgresql://...?pgbouncer=true"
+  ```
+</Accordion>
+
+### Prisma Client Not Generated
+
+**Problem**: Import errors for `@prisma/client` or generated types.
+
+**Solution**: The `postinstall` script should run automatically, but you can trigger it manually:
+
+```bash
+npx prisma generate
+```
+
+The client is generated to `src/generated/prisma/client` (configured in `prisma/schema.prisma:8`).
+
+### Seed Script Fails
+
+**Problem**: `npx prisma db seed` fails with R2 upload errors.
+
+<Steps>
+  <Step title="Check R2 Credentials">
+    Verify `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET_NAME` are correct.
+  </Step>
+
+  <Step title="Test R2 Connection">
+    ```bash
+    # Using AWS CLI
+    aws s3 ls s3://your-bucket-name \
+      --endpoint-url https://your-account-id.r2.cloudflarestorage.com \
+      --profile r2
+    ```
+  </Step>
+
+  <Step title="Verify WAV Files Exist">
+    Check `scripts/system-voices/*.wav` files are present in your repository. These should be included in the repo.
+  </Step>
+</Steps>
+
+## R2 Storage Issues
+
+### Audio Upload Fails
+
+**Problem**: Custom voice cloning fails with "Failed to upload audio" error.
+
+<Accordion title="Check CORS Configuration">
+  R2 bucket needs CORS enabled for client uploads (if using presigned URLs):
+  
+  ```json
+  [
+    {
+      "AllowedOrigins": ["https://yourdomain.com"],
+      "AllowedMethods": ["GET", "PUT", "POST"],
+      "AllowedHeaders": ["*"],
+      "MaxAgeSeconds": 3600
+    }
+  ]
+  ```
+  
+  Apply in Cloudflare R2 dashboard under bucket settings.
+</Accordion>
+
+<Accordion title="Verify R2 Permissions">
+  The R2 API token needs these permissions:
+  - Object Read
+  - Object Write
+  - Object Delete (optional, for cleanup)
+  
+  Create a new token in Cloudflare dashboard if needed.
+</Accordion>
+
+<Accordion title="Check File Size Limits">
+  Next.js proxy has a 20MB body size limit (configured in `next.config.ts:8`). Audio files must be under this limit.
+  
+  The voice cloning requires at least 10 seconds of audio. Typical WAV files are 1-5MB.
+</Accordion>
+
+### Audio Playback Fails
+
+**Problem**: Generated audio won't play in browser.
+
+<Accordion title="Check Audio Proxy Route">
+  Resonance proxies audio through `/api/audio/[id]` to avoid CORS issues. Verify:
+  
+  ```bash
+  curl https://yourdomain.com/api/audio/generation-id -I
+  ```
+  
+  Should return `Content-Type: audio/wav` or `audio/mpeg`.
+</Accordion>
+
+<Accordion title="Verify R2 Object Exists">
+  Check the database `Generation` record has a valid `r2ObjectKey`, and the object exists in R2:
+  
+  ```bash
+  aws s3 ls s3://your-bucket/generations/ \
+    --endpoint-url https://your-account-id.r2.cloudflarestorage.com
+  ```
+</Accordion>
+
+<Accordion title="Browser MIME Type Issues">
+  Some browsers are strict about audio MIME types. The WAV files from Chatterbox should have:
+  
+  - `Content-Type: audio/wav`
+  - Valid WAV header (22050 Hz sample rate)
+  
+  Check browser console for codec errors.
+</Accordion>
+
+## Build & Runtime Issues
+
+### Build Fails: Environment Validation
+
+**Problem**: Build fails with "Invalid environment variables" error.
+
+**Solution**: All required env vars must be set at build time. The validation schema is in `src/lib/env.ts:5-20`.
+
+```bash
+# Check which variables are missing
+npm run build
+
+# Set SKIP_ENV_VALIDATION for build-only scenarios
+SKIP_ENV_VALIDATION=true npm run build
+```
+
+<Warning>
+  Skipping validation is **not recommended** for production. It will cause runtime errors if vars are actually missing.
+</Warning>
+
+### Runtime Error: tRPC Procedure Failed
+
+**Problem**: tRPC mutations fail with generic error messages.
+
+<Accordion title="Check Server Logs">
+  The actual error is logged server-side. Check your hosting platform's logs:
+  
+  ```bash
+  # Railway
+  railway logs
+  
+  # Docker
+  docker logs resonance
+  
+  # Vercel
+  vercel logs
+  ```
+</Accordion>
+
+<Accordion title="Common Causes">
+  - **Database connection failed**: Check `DATABASE_URL`
+  - **R2 credentials invalid**: Verify R2 env vars
+  - **Modal timeout**: See [Cold Starts](#cold-starts)
+  - **Clerk session invalid**: User needs to re-authenticate
+</Accordion>
+
+### Clerk Organizations Not Working
+
+**Problem**: Users can't create organizations or see org-specific data.
+
+<Steps>
+  <Step title="Enable Organizations in Clerk">
+    Go to Clerk Dashboard → Settings → Organizations → Enable
+  </Step>
+
+  <Step title="Verify Middleware">
+    Clerk middleware must be configured to protect routes. Check `middleware.ts` exists and includes:
+    
+    ```typescript
+    export default clerkMiddleware();
+    ```
+  </Step>
+
+  <Step title="Check orgId in Requests">
+    All tRPC procedures use `auth().orgId` to scope data. If this is null, the user isn't in an organization context.
+  </Step>
+</Steps>
+
+## Performance Issues
+
+### Slow TTS Generation
+
+**Problem**: Audio generation takes longer than expected (>10 seconds after warm start).
+
+**Causes**:
+- **Long text**: Chatterbox processes ~50 characters/second. 500 characters = ~10 seconds.
+- **High parameters**: Lower `temperature`, `top_k`, or `repetition_penalty` for faster generation.
+- **Modal concurrency**: If `max_inputs=10` is reached, requests queue.
+
+<Accordion title="Optimize Generation Parameters">
+  ```typescript
+  // Faster generation (less creative)
+  const audio = await generateSpeech(prompt, voiceKey, {
+    temperature: 0.5,     // default: 0.8
+    top_k: 500,          // default: 1000
+  });
+  ```
+</Accordion>
+
+<Accordion title="Scale Modal Concurrency">
+  Increase `max_inputs` in `chatterbox_tts.py`:
+  
+  ```python
+  @modal.concurrent(max_inputs=20)  # default: 10
+  ```
+  
+  Redeploy: `modal deploy chatterbox_tts.py`
+</Accordion>
+
+### High Memory Usage
+
+**Problem**: Next.js app uses excessive memory or crashes.
+
+**Solution**: The Prisma client and tRPC context can accumulate in memory. Use connection pooling and limit concurrent requests:
+
+```typescript next.config.ts
+const nextConfig: NextConfig = {
+  experimental: {
+    proxyClientMaxBodySize: "20mb",
+    // Add memory management
+    workerThreads: false,
+    cpus: 1,
+  },
+};
+```
+
+Or increase memory limit:
+
+```bash
+# In your hosting platform
+NODE_OPTIONS="--max-old-space-size=2048"
+```
+
+## Getting Help
+
+<CardGroup cols={2}>
+  <Card title="GitHub Issues" icon="github" href="https://github.com/code-with-antonio/resonance/issues">
+    Report bugs or request features
+  </Card>
+  <Card title="Deployment Overview" icon="book" href="/deployment/overview">
+    Review prerequisites and architecture
+  </Card>
+</CardGroup>
+
+<Note>
+  For Modal-specific issues, check [Modal's documentation](https://modal.com/docs) or their Discord community.
+</Note>

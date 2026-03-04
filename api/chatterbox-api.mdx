@@ -1,0 +1,367 @@
+---
+title: 'Chatterbox TTS API'
+description: 'Modal-hosted FastAPI endpoint for voice cloning and text-to-speech'
+---
+
+## Overview
+
+The Chatterbox TTS API is a FastAPI application running on [Modal](https://modal.com) with GPU acceleration. It provides real-time text-to-speech generation using the Chatterbox Turbo model.
+
+<Info>
+  This is the **backend TTS engine** that powers Resonance. The tRPC `generations.create` endpoint calls this API internally.
+</Info>
+
+## Architecture
+
+- **Platform**: Modal serverless GPU infrastructure
+- **GPU**: A10G (24GB VRAM)
+- **Model**: [Chatterbox Turbo TTS](https://github.com/resemble-ai/chatterbox) v0.1.6
+- **Scaledown**: 5-minute idle timeout
+- **Concurrency**: Up to 10 concurrent requests
+- **Storage**: Cloudflare R2 bucket mount (read-only)
+
+### Infrastructure
+
+```python chatterbox_tts.py
+@app.cls(
+    gpu="a10g",
+    scaledown_window=60 * 5,
+    secrets=[
+        modal.Secret.from_name("hf-token"),
+        modal.Secret.from_name("chatterbox-api-key"),
+        modal.Secret.from_name("cloudflare-r2"),
+    ],
+    volumes={R2_MOUNT_PATH: r2_bucket},
+)
+@modal.concurrent(max_inputs=10)
+class Chatterbox:
+    @modal.enter()
+    def load_model(self):
+        self.model = ChatterboxTurboTTS.from_pretrained(device="cuda")
+```
+
+## Authentication
+
+All requests require an API key passed via the `x-api-key` header.
+
+<ParamField header="x-api-key" type="string" required>
+  API key for authenticating requests. Configure via Modal secret `CHATTERBOX_API_KEY`.
+</ParamField>
+
+### Authentication Error
+
+```json
+{
+  "detail": "Invalid API key"
+}
+```
+
+HTTP Status: `403 Forbidden`
+
+---
+
+## Generate Speech
+
+Generate speech audio from text using a voice clone.
+
+<CodeGroup>
+```bash cURL
+curl -X POST "https://your-modal-endpoint/generate" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: your-api-key" \
+  -d '{
+    "prompt": "Hello from Chatterbox [chuckle].",
+    "voice_key": "voices/system/default.wav",
+    "temperature": 0.8,
+    "top_p": 0.95,
+    "top_k": 1000,
+    "repetition_penalty": 1.2,
+    "norm_loudness": true
+  }' \
+  --output output.wav
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "https://your-modal-endpoint/generate",
+    headers={
+        "Content-Type": "application/json",
+        "x-api-key": "your-api-key"
+    },
+    json={
+        "prompt": "Hello from Chatterbox [chuckle].",
+        "voice_key": "voices/system/default.wav",
+        "temperature": 0.8,
+        "top_p": 0.95,
+        "top_k": 1000,
+        "repetition_penalty": 1.2,
+        "norm_loudness": True
+    }
+)
+
+with open("output.wav", "wb") as f:
+    f.write(response.content)
+```
+
+```typescript TypeScript
+const response = await fetch("https://your-modal-endpoint/generate", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "x-api-key": "your-api-key"
+  },
+  body: JSON.stringify({
+    prompt: "Hello from Chatterbox [chuckle].",
+    voice_key: "voices/system/default.wav",
+    temperature: 0.8,
+    top_p: 0.95,
+    top_k: 1000,
+    repetition_penalty: 1.2,
+    norm_loudness: true
+  })
+});
+
+const audioBuffer = await response.arrayBuffer();
+```
+</CodeGroup>
+
+### Request Body
+
+<ParamField body="prompt" type="string" required>
+  Text to convert to speech. Supports special tokens like `[chuckle]`, `[laugh]`, etc.
+  
+  **Constraints**:
+  - Minimum length: 1 character
+  - Maximum length: 5,000 characters
+</ParamField>
+
+<ParamField body="voice_key" type="string" required>
+  R2 object key for the voice audio file. Must be accessible in the mounted R2 bucket.
+  
+  **Examples**:
+  - `voices/system/narrator.wav`
+  - `voices/custom/org-123/voice-456.wav`
+  
+  **Constraints**:
+  - Minimum length: 1 character
+  - Maximum length: 300 characters
+</ParamField>
+
+<ParamField body="temperature" type="float" default="0.8">
+  Controls randomness in generation.
+  
+  **Range**: 0.0 to 2.0
+  - Lower (0.0-0.5): More consistent and predictable
+  - Default (0.8): Balanced naturalness
+  - Higher (1.0-2.0): More varied and expressive
+</ParamField>
+
+<ParamField body="top_p" type="float" default="0.95">
+  Nucleus sampling threshold for controlling diversity.
+  
+  **Range**: 0.0 to 1.0
+  - Lower values: More focused, conservative sampling
+  - Higher values: More diverse token selection
+</ParamField>
+
+<ParamField body="top_k" type="int" default="1000">
+  Number of top tokens to consider during sampling.
+  
+  **Range**: 1 to 10,000
+  - Lower values: More focused vocabulary
+  - Higher values: Broader token selection
+</ParamField>
+
+<ParamField body="repetition_penalty" type="float" default="1.2">
+  Penalty for repeating tokens.
+  
+  **Range**: 1.0 to 2.0
+  - 1.0: No penalty (may repeat)
+  - 1.2: Balanced (default)
+  - 2.0: Strong penalty (avoids repetition)
+</ParamField>
+
+<ParamField body="norm_loudness" type="boolean" default="true">
+  Whether to normalize audio loudness for consistent volume across generations.
+</ParamField>
+
+### Response
+
+**Content-Type**: `audio/wav`
+
+**Body**: Binary WAV audio stream
+
+### Implementation
+
+```python chatterbox_tts.py
+@web_app.post("/generate", responses={200: {"content": {"audio/wav": {}}}})
+def generate_speech(request: TTSRequest):
+    voice_path = Path(R2_MOUNT_PATH) / request.voice_key
+    if not voice_path.exists():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Voice not found at '{request.voice_key}'",
+        )
+
+    try:
+        audio_bytes = self.generate.local(
+            request.prompt,
+            str(voice_path),
+            request.temperature,
+            request.top_p,
+            request.top_k,
+            request.repetition_penalty,
+            request.norm_loudness,
+        )
+        return StreamingResponse(
+            io.BytesIO(audio_bytes),
+            media_type="audio/wav",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate audio: {e}",
+        )
+```
+
+---
+
+## Error Responses
+
+### 400 Bad Request
+
+Voice file not found in R2 bucket.
+
+```json
+{
+  "detail": "Voice not found at 'voices/system/invalid.wav'"
+}
+```
+
+### 403 Forbidden
+
+Invalid or missing API key.
+
+```json
+{
+  "detail": "Invalid API key"
+}
+```
+
+### 422 Unprocessable Entity
+
+Invalid request parameters.
+
+```json
+{
+  "detail": [
+    {
+      "loc": ["body", "temperature"],
+      "msg": "ensure this value is less than or equal to 2.0",
+      "type": "value_error.number.not_le"
+    }
+  ]
+}
+```
+
+### 500 Internal Server Error
+
+Generation failure.
+
+```json
+{
+  "detail": "Failed to generate audio: CUDA out of memory"
+}
+```
+
+---
+
+## Special Tokens
+
+Chatterbox supports inline emotion and sound tokens:
+
+| Token | Effect |
+|-------|--------|
+| `[chuckle]` | Light laughter |
+| `[laugh]` | Full laughter |
+| `[sigh]` | Sighing sound |
+| `[gasp]` | Gasping sound |
+| `[cough]` | Coughing sound |
+
+**Example**:
+```json
+{
+  "prompt": "Well, that's interesting [chuckle]. I didn't expect that at all [gasp]!"
+}
+```
+
+---
+
+## Local Testing
+
+Test the API locally using Modal's CLI:
+
+```bash
+modal run chatterbox_tts.py \
+  --prompt "Hello from Chatterbox [chuckle]." \
+  --voice-key "voices/system/default.wav" \
+  --output-path "/tmp/output.wav" \
+  --temperature 0.8 \
+  --top-p 0.95 \
+  --top-k 1000 \
+  --repetition-penalty 1.2
+```
+
+---
+
+## Deployment
+
+Deploy to Modal:
+
+```bash
+modal deploy chatterbox_tts.py
+```
+
+### Required Secrets
+
+Configure these secrets in Modal:
+
+```bash
+# Hugging Face token (for model access)
+modal secret create hf-token HF_TOKEN=hf_xxx
+
+# Chatterbox API key (for authentication)
+modal secret create chatterbox-api-key CHATTERBOX_API_KEY=your-secret-key
+
+# Cloudflare R2 credentials (for voice storage)
+modal secret create cloudflare-r2 \
+  AWS_ACCESS_KEY_ID=r2-access-key-id \
+  AWS_SECRET_ACCESS_KEY=r2-secret-access-key
+```
+
+---
+
+## Performance
+
+- **Cold start**: ~15-30 seconds (model loading)
+- **Warm inference**: ~1-3 seconds per generation
+- **Concurrency**: Up to 10 parallel requests
+- **Auto-scaling**: Scales to zero after 5 minutes of inactivity
+
+<Tip>
+  For production, consider implementing a keep-alive mechanism to avoid cold starts during peak hours.
+</Tip>
+
+---
+
+## API Documentation
+
+Interactive API docs are available at:
+
+```
+https://your-modal-endpoint/docs
+```
+
+Provided by FastAPI's built-in Swagger UI.

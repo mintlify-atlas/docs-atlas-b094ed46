@@ -1,80 +1,254 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get Resonance running locally in minutes with this step-by-step guide
 ---
 
-## Get started in three steps
+This guide will walk you through setting up Resonance on your local machine. You'll have a fully functional text-to-speech platform running in under 15 minutes.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+Before you begin, make sure you have the following:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+<Steps>
+  <Step title="Node.js 20.9 or later">
+    Download from [nodejs.org](https://nodejs.org) or use a version manager like `nvm`.
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
+    ```bash
+    node --version  # Should be 20.9.0 or higher
+    ```
+  </Step>
+  
+  <Step title="Prisma Postgres Database">
+    Sign up for a free database at [Prisma Data Platform](https://cwa.run/prisma). You'll need the connection string.
     
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
+    <Info>Any PostgreSQL database will work - Prisma Postgres is recommended for its simplicity.</Info>
+  </Step>
+  
+  <Step title="Clerk Account (with Organizations enabled)">
+    Create an account at [clerk.com](https://cwa.run/clerk) and enable Organizations in your application settings.
+  </Step>
+  
+  <Step title="Cloudflare R2 Bucket">
+    Set up a bucket at [Cloudflare R2](https://cwa.run/cloudflare-r2). The free tier includes 10GB storage.
+  </Step>
+  
+  <Step title="Modal Account">
+    Sign up at [modal.com](https://cwa.run/modal) for serverless GPU hosting. Install the CLI:
     
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```bash
+    pip install modal
+    modal setup
+    ```
+  </Step>
+  
+  <Step title="Polar Account (Optional)">
+    For billing features, create an account at [polar.sh](https://cwa.run/polar). Use sandbox mode for testing.
+  </Step>
+</Steps>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+## Installation
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/code-with-antonio/resonance.git
+    cd resonance
+    ```
+  </Step>
+  
+  <Step title="Install dependencies">
+    ```bash
+    npm install
+    ```
+    
+    This will also run `prisma generate` automatically via the postinstall script.
+  </Step>
+  
+  <Step title="Configure environment variables">
+    Create a `.env.local` file in the root directory with the following variables:
+    
+    ```env .env.local
+    # Database
+    DATABASE_URL="postgresql://user:password@host:5432/database"
+    
+    # Chatterbox TTS (Modal)
+    CHATTERBOX_API_URL="https://your-modal-endpoint.modal.run"
+    CHATTERBOX_API_KEY="your-api-key"
+    
+    # Clerk
+    CLERK_SECRET_KEY="sk_..."
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_..."
+    NEXT_PUBLIC_CLERK_SIGN_IN_URL="/sign-in"
+    NEXT_PUBLIC_CLERK_SIGN_UP_URL="/sign-up"
+    
+    # Cloudflare R2
+    R2_ACCOUNT_ID="your-account-id"
+    R2_ACCESS_KEY_ID="your-access-key"
+    R2_SECRET_ACCESS_KEY="your-secret-key"
+    R2_BUCKET_NAME="your-bucket-name"
+    
+    # Polar (Billing)
+    POLAR_ACCESS_TOKEN="your-polar-token"
+    POLAR_SERVER="sandbox"
+    POLAR_PRODUCT_ID="your-product-id"
+    
+    # App
+    APP_URL="http://localhost:3000"
+    ```
+    
+    <Warning>Keep your `.env.local` file secure and never commit it to version control.</Warning>
+  </Step>
+  
+  <Step title="Set up the database">
+    Run the Prisma migrations to create the database schema:
+    
+    ```bash
+    npx prisma migrate deploy
+    ```
+    
+    This creates two main tables:
+    - `Voice` - Stores system and custom voice metadata
+    - `Generation` - Stores TTS generation history and parameters
+  </Step>
+</Steps>
 
-### Step 3: Go live
+## Deploy the TTS Engine
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+The TTS engine runs on Modal's serverless GPU infrastructure. You need to deploy it before the web app can generate audio.
 
-## Next steps
+<Steps>
+  <Step title="Configure R2 credentials in chatterbox_tts.py">
+    Open `chatterbox_tts.py` and update the R2 configuration:
+    
+    ```python chatterbox_tts.py
+    R2_BUCKET_NAME = "your-bucket-name"
+    R2_ACCOUNT_ID = "your-account-id"
+    ```
+  </Step>
+  
+  <Step title="Create Modal secrets">
+    Create the required secrets in your [Modal dashboard](https://modal.com/secrets):
+    
+    | Secret Name | Keys | Description |
+    |-------------|------|-------------|
+    | `cloudflare-r2` | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | R2 API credentials |
+    | `chatterbox-api-key` | `CHATTERBOX_API_KEY` | API key to protect the endpoint (use any strong random string) |
+    | `hf-token` | `HF_TOKEN` | Hugging Face token for downloading model weights |
+    
+    Or create them via CLI:
+    
+    ```bash
+    modal secret create cloudflare-r2 \
+      AWS_ACCESS_KEY_ID=your-r2-access-key \
+      AWS_SECRET_ACCESS_KEY=your-r2-secret-key
+    
+    modal secret create chatterbox-api-key \
+      CHATTERBOX_API_KEY=your-strong-random-string
+    
+    modal secret create hf-token \
+      HF_TOKEN=your-huggingface-token
+    ```
+  </Step>
+  
+  <Step title="Deploy to Modal">
+    ```bash
+    modal deploy chatterbox_tts.py
+    ```
+    
+    This deploys Chatterbox TTS to a serverless NVIDIA A10G GPU. The container mounts your R2 bucket read-only for direct access to voice reference audio.
+    
+    Copy the resulting Modal URL and set it as `CHATTERBOX_API_URL` in your `.env.local`.
+    
+    <Info>The first request after inactivity may take 10-15 seconds due to cold starts as Modal provisions the GPU container.</Info>
+  </Step>
+  
+  <Step title="Generate the API client">
+    Once deployed, generate the type-safe Chatterbox client from the OpenAPI spec:
+    
+    ```bash
+    npm run sync-api
+    ```
+    
+    This creates TypeScript types in `src/types/chatterbox-api.ts` for full type safety when calling the TTS API.
+  </Step>
+</Steps>
 
-Now that you have your docs running, explore these key features:
+## Seed System Voices
 
-<CardGroup cols={2}>
+Resonance includes 20 pre-built voices across different categories and locales. Seed them to your database and R2 bucket:
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+```bash
+npx prisma db seed
+```
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+This uploads the voice samples from the repository (included WAV files from [Modal's voice sample pack](https://modal-cdn.com/blog/audio/chatterbox-tts-voices.zip)) and creates the corresponding database records.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+The seed script creates voices in categories like Audiobook, Conversational, Narrative, Characters, Meditation, Podcast, Advertising, Voiceover, and Corporate.
 </Note>
+
+## Run the Application
+
+Start the development server:
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser. You'll be prompted to sign in with Clerk.
+
+<Steps>
+  <Step title="Sign up and create an organization">
+    Create a new account and set up your first organization. All voices and generations are scoped to organizations.
+  </Step>
+  
+  <Step title="Generate your first audio">
+    Navigate to the Text-to-Speech page, select a voice, enter some text, and click Generate. Your audio will be created in seconds!
+  </Step>
+  
+  <Step title="Clone a voice (optional)">
+    Go to the Voices page and click "Create Voice". Upload a 10+ second audio sample or record one directly in the browser.
+  </Step>
+</Steps>
+
+## Testing with Sandbox Mode
+
+To test billing features without real payments, use Polar's sandbox mode:
+
+1. Set `POLAR_SERVER="sandbox"` in your `.env.local`
+2. Use the test card number `4242 4242 4242 4242` with any future expiration date and any CVC
+3. All charges will be simulated - no real money will be processed
+
+<Warning>
+Remember to switch to `POLAR_SERVER="production"` when deploying to production!
+</Warning>
+
+## Available Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start development server on port 3000 |
+| `npm run build` | Create production build |
+| `npm run start` | Start production server |
+| `npm run lint` | Run ESLint |
+| `npm run sync-api` | Regenerate Chatterbox API types from OpenAPI spec |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Architecture" icon="diagram-project" href="/architecture">
+    Learn how Resonance works under the hood
+  </Card>
+  
+  <Card title="Self-Hosting" icon="server" href="/deployment/overview">
+    Deploy Resonance to production
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api/introduction">
+    Explore the tRPC API endpoints
+  </Card>
+  
+  <Card title="Configuration" icon="gear" href="/configuration/environment-variables">
+    Customize Resonance for your needs
+  </Card>
+</CardGroup>

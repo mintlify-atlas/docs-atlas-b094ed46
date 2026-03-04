@@ -1,0 +1,474 @@
+---
+title: Cloudflare R2 Setup
+description: Configure S3-compatible object storage for voice audio and generation files
+icon: cloud
+---
+
+Resonance uses [Cloudflare R2](https://www.cloudflare.com/products/r2/) for audio file storage. R2 is S3-compatible with zero egress fees, making it ideal for serving generated audio files.
+
+## Why R2?
+
+- **S3-Compatible API** - Works with AWS SDK clients
+- **Zero Egress Fees** - No charges for downloads
+- **Fast Global CDN** - Low latency worldwide
+- **Generous Free Tier** - 10 GB storage, 1M writes, 10M reads per month
+
+## Prerequisites
+
+- Cloudflare account ([sign up free](https://dash.cloudflare.com/sign-up))
+- Payment method on file (required even for free tier)
+
+## Quick Setup
+
+<Steps>
+  <Step title="Create R2 bucket">
+    Navigate to [R2 in Cloudflare Dashboard](https://dash.cloudflare.com/?to=/:account/r2):
+    
+    1. Click **Create bucket**
+    2. Enter bucket name: `resonance-app` (or your preferred name)
+    3. Choose location: **Automatic** (recommended)
+    4. Click **Create bucket**
+    
+    <Note>
+      Bucket names must be globally unique and DNS-compliant (lowercase, hyphens only).
+    </Note>
+  </Step>
+  
+  <Step title="Generate API token">
+    Create API credentials for programmatic access:
+    
+    1. Go to **R2 → Manage R2 API Tokens**
+    2. Click **Create API token**
+    3. Configure permissions:
+       - **Token name:** `resonance-api-token`
+       - **Permissions:** Object Read & Write
+       - **Bucket:** Select your bucket (`resonance-app`)
+    4. Click **Create API Token**
+    5. Copy the displayed credentials:
+       - Access Key ID
+       - Secret Access Key
+    
+    <Warning>
+      The Secret Access Key is shown only once. Save it securely before closing.
+    </Warning>
+  </Step>
+  
+  <Step title="Get account ID">
+    Find your Cloudflare Account ID:
+    
+    1. In the dashboard sidebar, note your **Account ID**
+    2. Or copy from the R2 bucket overview page
+    
+    Example: `ea63931e6e8ff54c5be60feacd3026d6`
+  </Step>
+  
+  <Step title="Configure environment variables">
+    Add R2 credentials to `.env.local`:
+    
+    ```env .env.local
+    R2_ACCOUNT_ID="ea63931e6e8ff54c5be60feacd3026d6"
+    R2_ACCESS_KEY_ID="your-access-key-id"
+    R2_SECRET_ACCESS_KEY="your-secret-access-key"
+    R2_BUCKET_NAME="resonance-app"
+    ```
+  </Step>
+</Steps>
+
+## R2 Client Configuration
+
+Resonance uses the AWS SDK S3 client with R2's S3-compatible endpoint.
+
+### Client Setup
+
+```typescript src/lib/r2.ts
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+} from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { env } from "./env";
+
+const r2 = new S3Client({
+  region: "auto",
+  endpoint: `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: env.R2_ACCESS_KEY_ID,
+    secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+  },
+});
+```
+
+Defined in `src/lib/r2.ts:10`.
+
+**Key differences from S3:**
+- `region: "auto"` - R2 handles region automatically
+- Endpoint uses account ID: `{accountId}.r2.cloudflarestorage.com`
+- No region-specific endpoints needed
+
+### Helper Functions
+
+<AccordionGroup>
+  <Accordion title="uploadAudio()" icon="upload">
+    Upload audio files to R2 with metadata.
+    
+    ```typescript src/lib/r2.ts
+    export async function uploadAudio({
+      buffer,
+      key,
+      contentType = "audio/wav",
+    }: UploadAudioOptions): Promise<void> {
+      await r2.send(
+        new PutObjectCommand({
+          Bucket: env.R2_BUCKET_NAME,
+          Key: key,
+          Body: buffer,
+          ContentType: contentType,
+        }),
+      );
+    }
+    ```
+    
+    **Parameters:**
+    - `buffer` - Audio file as Buffer
+    - `key` - Object path (e.g., `voices/custom/abc123`)
+    - `contentType` - MIME type (default: `audio/wav`)
+    
+    Defined in `src/lib/r2.ts:25`.
+  </Accordion>
+  
+  <Accordion title="deleteAudio()" icon="trash">
+    Delete audio files from R2.
+    
+    ```typescript src/lib/r2.ts
+    export async function deleteAudio(key: string): Promise<void> {
+      await r2.send(
+        new DeleteObjectCommand({
+          Bucket: env.R2_BUCKET_NAME,
+          Key: key,
+        }),
+      );
+    }
+    ```
+    
+    Defined in `src/lib/r2.ts:40`.
+  </Accordion>
+  
+  <Accordion title="getSignedAudioUrl()" icon="link">
+    Generate temporary presigned URLs for secure audio access.
+    
+    ```typescript src/lib/r2.ts
+    export async function getSignedAudioUrl(key: string): Promise<string> {
+      const command = new GetObjectCommand({
+        Bucket: env.R2_BUCKET_NAME,
+        Key: key,
+      });
+      return getSignedUrl(r2, command, { expiresIn: 3600 }); // 1 hour
+    }
+    ```
+    
+    **Returns:** Temporary URL valid for 1 hour
+    
+    <Note>
+      Presigned URLs allow secure, time-limited access without exposing API credentials to clients.
+    </Note>
+    
+    Defined in `src/lib/r2.ts:49`.
+  </Accordion>
+</AccordionGroup>
+
+## Bucket Structure
+
+Resonance organizes audio files using a consistent key structure:
+
+```
+resonance-app/
+├── voices/
+│   ├── system/
+│   │   ├── clxyz123           # System voice reference audio
+│   │   ├── clxyz456
+│   │   └── ...
+│   └── custom/
+│       ├── clabc789           # User-uploaded voice samples
+│       ├── cldef012
+│       └── ...
+└── generations/
+    ├── clgen001               # Generated TTS audio files
+    ├── clgen002
+    └── ...
+```
+
+### Key Patterns
+
+**System voices:**
+```
+voices/system/{voiceId}
+```
+Example: `voices/system/clxyz123abc`
+
+**Custom voices:**
+```
+voices/custom/{voiceId}
+```
+Example: `voices/custom/clabc789def`
+
+**Generations:**
+```
+generations/{generationId}
+```
+Example: `generations/clgen456xyz`
+
+<Info>
+  All IDs are CUIDs generated by Prisma (`@default(cuid())`) defined in `prisma/schema.prisma:37` and `prisma/schema.prisma:58`.
+</Info>
+
+## Modal Integration
+
+The Chatterbox TTS deployment on Modal mounts the R2 bucket read-only for direct voice reference access.
+
+### Modal R2 Mount
+
+```python chatterbox_tts.py
+# R2 cloud bucket mount (read-only, replaces Modal Volume)
+R2_BUCKET_NAME = "resonance-app"
+R2_ACCOUNT_ID = "ea63931e6e8ff54c5be60feacd3026d6"
+R2_MOUNT_PATH = "/r2"
+
+r2_bucket = modal.CloudBucketMount(
+    R2_BUCKET_NAME,
+    bucket_endpoint_url=f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+    secret=modal.Secret.from_name("cloudflare-r2"),
+    read_only=True,
+)
+```
+
+Defined in `chatterbox_tts.py:22`.
+
+**Benefits:**
+- No file duplication between Next.js and Modal
+- Voice references are available immediately after upload
+- Lower storage costs (single copy in R2)
+
+### Voice Path Resolution
+
+When generating TTS, Modal reads voice audio directly from the mounted R2 bucket:
+
+```python chatterbox_tts.py
+def generate_speech(request: TTSRequest):
+    # Construct path: /r2/voices/system/clxyz123
+    voice_path = Path(R2_MOUNT_PATH) / request.voice_key
+    
+    if not voice_path.exists():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Voice not found at '{request.voice_key}'",
+        )
+    
+    audio_bytes = self.generate.local(
+        prompt=request.prompt,
+        audio_prompt_path=str(voice_path),
+        # ... other params
+    )
+```
+
+Defined in `chatterbox_tts.py:116`.
+
+## Usage Examples
+
+### Upload Custom Voice
+
+```typescript
+import { uploadAudio } from "@/lib/r2";
+
+// User uploads voice sample
+const audioBuffer = await file.arrayBuffer();
+const buffer = Buffer.from(audioBuffer);
+
+// Create voice in database
+const voice = await prisma.voice.create({
+  data: {
+    name: "My Voice",
+    variant: "CUSTOM",
+    orgId: "org_abc123",
+  },
+});
+
+// Upload to R2
+const key = `voices/custom/${voice.id}`;
+await uploadAudio({ buffer, key });
+
+// Update database with R2 key
+await prisma.voice.update({
+  where: { id: voice.id },
+  data: { r2ObjectKey: key },
+});
+```
+
+### Generate Presigned URL
+
+```typescript
+import { getSignedAudioUrl } from "@/lib/r2";
+
+// Fetch generation from database
+const generation = await prisma.generation.findUnique({
+  where: { id: generationId },
+});
+
+if (!generation?.r2ObjectKey) {
+  throw new Error("Audio not available");
+}
+
+// Generate temporary URL for client
+const audioUrl = await getSignedAudioUrl(generation.r2ObjectKey);
+
+// Return URL to client (expires in 1 hour)
+return { audioUrl };
+```
+
+Used in `src/app/api/audio/[generationId]/route.ts:1`.
+
+### Delete Voice and Audio
+
+```typescript
+import { deleteAudio } from "@/lib/r2";
+
+const voice = await prisma.voice.findUnique({
+  where: { id: voiceId },
+});
+
+if (voice?.r2ObjectKey) {
+  // Delete from R2
+  await deleteAudio(voice.r2ObjectKey);
+}
+
+// Delete from database
+await prisma.voice.delete({
+  where: { id: voiceId },
+});
+```
+
+## CORS Configuration
+
+If you need to access R2 files directly from the browser (not recommended for audio), configure CORS:
+
+<Steps>
+  <Step title="Navigate to bucket settings">
+    Go to **R2 → Your Bucket → Settings**
+  </Step>
+  
+  <Step title="Add CORS policy">
+    ```json
+    [
+      {
+        "AllowedOrigins": [
+          "http://localhost:3000",
+          "https://yourdomain.com"
+        ],
+        "AllowedMethods": ["GET"],
+        "AllowedHeaders": ["*"],
+        "MaxAgeSeconds": 3600
+      }
+    ]
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  Resonance uses **presigned URLs** via API routes instead of direct browser access. CORS is not required for the default setup.
+</Warning>
+
+## Public Bucket (Optional)
+
+To serve files publicly without presigned URLs:
+
+<Steps>
+  <Step title="Enable public access">
+    In bucket settings, create a **Custom Domain** or enable **Public Access**
+  </Step>
+  
+  <Step title="Update object URLs">
+    ```typescript
+    // Public URL pattern
+    const publicUrl = `https://pub-{hash}.r2.dev/${key}`;
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  The default setup uses **private buckets** with presigned URLs for security. Only enable public access if you understand the implications.
+</Note>
+
+## Monitoring and Costs
+
+### View Usage
+
+1. Go to **R2 → Overview**
+2. View metrics:
+   - Storage used (GB)
+   - Read/write operations
+   - Egress (always $0 with R2)
+
+### Free Tier Limits
+
+| Resource | Free Tier | Overage Cost |
+|----------|-----------|-------------|
+| Storage | 10 GB | $0.015/GB/month |
+| Class A Operations (writes) | 1M/month | $4.50/million |
+| Class B Operations (reads) | 10M/month | $0.36/million |
+| Egress | Unlimited | $0 |
+
+<Info>
+  Resonance generates ~100 KB audio files. With 10 GB free storage, you can store approximately **100,000 generations** before exceeding the free tier.
+</Info>
+
+## Troubleshooting
+
+### Upload fails with access denied
+
+```
+AccessDenied: Access Denied
+```
+
+**Solution:** Verify API token has **Object Read & Write** permissions for the bucket.
+
+### Modal can't read voices
+
+```
+Voice not found at 'voices/system/clxyz123'
+```
+
+**Checklist:**
+1. Verify Modal secret `cloudflare-r2` is configured with correct credentials
+2. Check `R2_ACCOUNT_ID` and `R2_BUCKET_NAME` match in `chatterbox_tts.py:23`
+3. Ensure voice was uploaded successfully to R2
+4. Test file existence:
+   ```bash
+   aws s3 ls s3://resonance-app/voices/system/ \
+     --endpoint-url https://{account_id}.r2.cloudflarestorage.com
+   ```
+
+### Presigned URLs return 403
+
+Presigned URLs have a 1-hour expiration. If URLs are stale, regenerate them by fetching the resource again.
+
+### Account ID not found
+
+The Account ID is different from your Cloudflare user ID. Find it:
+1. Dashboard sidebar under account name
+2. R2 → Bucket overview page
+3. URL path: `dash.cloudflare.com/:account_id/r2`
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Modal Deployment" icon="server" href="/configuration/modal-deployment">
+    Configure R2 mount in Modal
+  </Card>
+  <Card title="Database Setup" icon="database" href="/configuration/database-setup">
+    Store R2 keys in Prisma
+  </Card>
+  <Card title="Environment Variables" icon="key" href="/configuration/environment-variables">
+    R2 credential configuration
+  </Card>
+</CardGroup>

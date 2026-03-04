@@ -1,0 +1,187 @@
+---
+title: 'Text-to-Speech Generation'
+description: 'Generate natural-sounding speech from text with customizable voice parameters'
+icon: 'waveform'
+---
+
+## Overview
+
+Resonance's text-to-speech engine converts written text into natural-sounding audio using AI-powered voice synthesis. The generation system supports both system and custom voices with fine-tuned control over speech characteristics.
+
+## Generation Parameters
+
+The TTS engine accepts several parameters to control the output audio quality and characteristics:
+
+<ParamField path="text" type="string" required>
+  The input text to convert to speech
+  - **Maximum length**: 5,000 characters
+  - **Minimum length**: 1 character
+  - Text is automatically trimmed before processing
+</ParamField>
+
+<ParamField path="voiceId" type="string" required>
+  The unique identifier of the voice to use
+  - Can be a system voice or custom voice ID
+  - Must belong to your organization (for custom voices)
+</ParamField>
+
+<ParamField path="temperature" type="number" default="0.8">
+  Controls creativity and expressiveness
+  - **Range**: 0.0 - 2.0
+  - **Lower values** (0-0.5): More consistent and predictable
+  - **Higher values** (1.5-2.0): More expressive and varied
+  - **UI Label**: "Creativity" (Consistent ↔ Expressive)
+</ParamField>
+
+<ParamField path="topP" type="number" default="0.95">
+  Controls voice variety and stability
+  - **Range**: 0.0 - 1.0
+  - **Step**: 0.05
+  - **Lower values**: More stable output
+  - **Higher values**: More dynamic variation
+  - **UI Label**: "Voice Variety" (Stable ↔ Dynamic)
+</ParamField>
+
+<ParamField path="topK" type="number" default="1000">
+  Controls expression range
+  - **Range**: 1 - 10,000
+  - **Step**: 100
+  - **Lower values**: Subtle expressions
+  - **Higher values**: Dramatic delivery
+  - **UI Label**: "Expression Range" (Subtle ↔ Dramatic)
+</ParamField>
+
+<ParamField path="repetitionPenalty" type="number" default="1.2">
+  Controls natural flow and rhythm
+  - **Range**: 1.0 - 2.0
+  - **Step**: 0.1
+  - **Lower values**: More rhythmic patterns
+  - **Higher values**: More varied delivery
+  - **UI Label**: "Natural Flow" (Rhythmic ↔ Varied)
+</ParamField>
+
+## Generation Workflow
+
+<Steps>
+  <Step title="Enter text">
+    Input your text in the text editor. The text must be between 1 and 5,000 characters.
+  </Step>
+  
+  <Step title="Select a voice">
+    Choose from available system voices or your custom cloned voices.
+  </Step>
+  
+  <Step title="Adjust parameters (optional)">
+    Fine-tune the generation settings using the parameter sliders:
+    - Creativity (temperature)
+    - Voice Variety (topP)
+    - Expression Range (topK)
+    - Natural Flow (repetitionPenalty)
+  </Step>
+  
+  <Step title="Generate audio">
+    Click the "Generate" button. The system will:
+    1. Validate your subscription status
+    2. Verify the selected voice exists and is accessible
+    3. Send the request to the Chatterbox TTS engine
+    4. Store the generated audio in cloud storage
+    5. Record the generation in your history
+  </Step>
+  
+  <Step title="Listen and download">
+    Once generation completes, you'll be redirected to the detail view where you can:
+    - Play the audio with the WaveSurfer player
+    - Download the audio file
+    - Regenerate with different settings
+  </Step>
+</Steps>
+
+## API Usage
+
+Generate audio programmatically using the tRPC API:
+
+```typescript
+import { trpc } from '@/trpc/client';
+
+const generation = await trpc.generations.create.mutate({
+  text: "Welcome to Resonance, the future of voice synthesis.",
+  voiceId: "clx1234567890",
+  temperature: 0.8,
+  topP: 0.95,
+  topK: 1000,
+  repetitionPenalty: 1.2,
+});
+
+console.log('Generation ID:', generation.id);
+// Navigate to: /text-to-speech/{generation.id}
+```
+
+## Subscription Requirements
+
+<Warning>
+  Text-to-speech generation requires an active subscription. Users without a subscription will receive a `SUBSCRIPTION_REQUIRED` error.
+</Warning>
+
+The system checks for active subscriptions before processing generation requests:
+
+```typescript
+const customerState = await polar.customers.getStateExternal({
+  externalId: orgId,
+});
+const hasActiveSubscription = (customerState.activeSubscriptions ?? []).length > 0;
+```
+
+## Usage Tracking
+
+Each generation is tracked for billing purposes:
+
+- **Event name**: `tts_generation`
+- **Metadata**: Character count of input text
+- **Cost**: $0.0003 per unit
+- Usage events are sent to Polar for metering
+
+## Response Format
+
+Successful generation returns:
+
+```typescript
+{
+  id: string; // Unique generation ID
+}
+```
+
+The audio can be accessed via:
+- **Detail page**: `/text-to-speech/{id}`
+- **Audio URL**: `/api/audio/{id}`
+
+## Error Handling
+
+<AccordionGroup>
+  <Accordion title="SUBSCRIPTION_REQUIRED">
+    User does not have an active subscription. Show checkout prompt.
+  </Accordion>
+  
+  <Accordion title="NOT_FOUND">
+    The selected voice ID does not exist or is not accessible by your organization.
+  </Accordion>
+  
+  <Accordion title="PRECONDITION_FAILED">
+    Voice exists but audio file is not available (missing r2ObjectKey).
+  </Accordion>
+  
+  <Accordion title="INTERNAL_SERVER_ERROR">
+    Generation failed or audio storage failed. The system automatically cleans up partial data.
+  </Accordion>
+</AccordionGroup>
+
+## Audio Processing
+
+The TTS engine applies several post-processing steps:
+
+1. **Loudness normalization**: All audio is normalized using `norm_loudness: true`
+2. **Format**: Audio is generated in WAV format
+3. **Storage**: Audio files are stored in R2 with the key pattern: `generations/orgs/{orgId}/{generationId}`
+
+<Note>
+  Generated audio is stored permanently until manually deleted. Each generation preserves the original parameters and voice name for reproducibility.
+</Note>

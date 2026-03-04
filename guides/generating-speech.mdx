@@ -1,0 +1,179 @@
+---
+title: 'Generating Speech'
+description: 'Learn how to convert text to natural-sounding speech using Resonance'
+icon: 'waveform'
+---
+
+Resonance's text-to-speech engine transforms written text into high-quality, natural-sounding audio using advanced AI voice models.
+
+## Before You Start
+
+<Note>
+  You need an active subscription to generate speech. See the [Usage & Billing](/guides/usage-billing) guide for pricing details.
+</Note>
+
+## Generating Your First Audio
+
+<Steps>
+  <Step title="Navigate to Text to Speech">
+    From the sidebar, click **Text to Speech** or visit `/text-to-speech` in your dashboard.
+  </Step>
+
+  <Step title="Enter Your Text">
+    In the main text input panel, type or paste the text you want to convert to speech.
+    
+    <Info>
+      Maximum text length: **5,000 characters** per generation
+    </Info>
+  </Step>
+
+  <Step title="Select a Voice">
+    Click the **Voice Style** dropdown to choose from:
+    - **Team Voices** - Custom voices created by your organization
+    - **Built-in Voices** - Pre-configured system voices
+    
+    Each voice displays its name and category (e.g., Audiobook, Conversational, Narrative).
+  </Step>
+
+  <Step title="Adjust Voice Settings (Optional)">
+    Fine-tune how the voice sounds using the sliders:
+    
+    <AccordionGroup>
+      <Accordion title="Creativity (Temperature)">
+        Controls variation in voice expression.
+        - **Consistent** (0.0): Predictable, stable delivery
+        - **Expressive** (2.0): More dynamic and varied
+        - Default: 0.8
+      </Accordion>
+      
+      <Accordion title="Voice Variety (Top P)">
+        Affects the range of possible voice outputs.
+        - **Stable** (0.0): Minimal variation
+        - **Dynamic** (1.0): Maximum variety
+        - Default: 0.95
+      </Accordion>
+      
+      <Accordion title="Expression Range (Top K)">
+        Controls the breadth of expressive choices.
+        - **Subtle** (1): Limited expression
+        - **Dramatic** (10,000): Full expressive range
+        - Default: 1,000
+      </Accordion>
+      
+      <Accordion title="Natural Flow (Repetition Penalty)">
+        Prevents repetitive patterns in speech.
+        - **Rhythmic** (1.0): Allows repetition
+        - **Varied** (2.0): Penalizes repetition
+        - Default: 1.2
+      </Accordion>
+    </AccordionGroup>
+  </Step>
+
+  <Step title="Generate Audio">
+    Click the **Generate** button to create your audio.
+    
+    The system will:
+    1. Validate your active subscription
+    2. Process your text with the selected voice
+    3. Apply your voice settings
+    4. Generate and store the audio file
+    5. Record usage for billing (charged per character)
+  </Step>
+
+  <Step title="Preview and Download">
+    Once generated, you'll be redirected to the audio detail page where you can:
+    - Play the audio with the built-in player
+    - Download the audio file
+    - View generation settings
+    - See character count and metadata
+  </Step>
+</Steps>
+
+## Quick Text Suggestions
+
+Resonance provides prompt suggestions to help you get started quickly. Click any suggestion to populate the text input with sample content.
+
+## Generation History
+
+All your generated audio files are saved and accessible through:
+- The **History** drawer (icon in the sidebar)
+- The main dashboard
+
+<Tip>
+  Your generation history is scoped to your organization, so all team members can access previously generated audio.
+</Tip>
+
+## Usage Metering
+
+Each generation is metered based on **character count**:
+- Characters are counted from your input text
+- Usage is tracked in real-time
+- Costs accumulate throughout your billing period
+- View estimated costs in the sidebar under "Current usage"
+
+<CardGroup cols={2}>
+  <Card title="Pricing" icon="dollar-sign" href="/guides/usage-billing">
+    Learn about character-based pricing
+  </Card>
+  <Card title="Custom Voices" icon="microphone" href="/guides/creating-custom-voices">
+    Create your own voice clones
+  </Card>
+</CardGroup>
+
+## Error Handling
+
+### Subscription Required
+
+If you don't have an active subscription, you'll see:
+```
+Subscription required
+[Subscribe]
+```
+
+Click **Subscribe** to start a checkout session with Polar.
+
+### Voice Not Found
+
+If the selected voice is unavailable (e.g., a team voice was deleted), select a different voice from the dropdown.
+
+### Generation Failed
+
+If generation fails:
+1. Check your internet connection
+2. Verify your text is under 5,000 characters
+3. Try a different voice
+4. Contact support if the issue persists
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="For Audiobooks">
+    - Use voices in the **Audiobook** or **Narrative** category
+    - Keep temperature lower (0.6-0.8) for consistency
+    - Use higher repetition penalty (1.3-1.5) for natural flow
+  </Accordion>
+  
+  <Accordion title="For Podcasts">
+    - Select **Podcast** or **Conversational** voices
+    - Increase temperature (0.8-1.0) for more expression
+    - Use moderate Top P (0.9-0.95) for natural variation
+  </Accordion>
+  
+  <Accordion title="For Customer Service">
+    - Choose **Customer Service** category voices
+    - Lower temperature (0.5-0.7) for professional tone
+    - Keep settings stable for brand consistency
+  </Accordion>
+  
+  <Accordion title="For Voice Acting">
+    - Use **Characters** category
+    - Higher temperature (1.0-1.5) for dramatic delivery
+    - Adjust expression range based on character needs
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+- [Create custom voices](/guides/creating-custom-voices) to match your brand
+- [Manage your organization](/guides/managing-organizations) and add team members
+- [Monitor usage and billing](/guides/usage-billing) to track costs

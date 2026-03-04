@@ -1,0 +1,267 @@
+---
+title: 'Creating Custom Voices'
+description: 'Clone voices by uploading audio samples or recording directly in your browser'
+icon: 'microphone'
+---
+
+Resonance's voice cloning feature lets you create custom voices from audio samples, perfect for branding, personalization, or creating unique voice characters.
+
+## Overview
+
+Custom voices are created from audio samples and become available to all members of your organization. You can clone voices using two methods:
+
+1. **Upload** - Provide an existing audio file
+2. **Record** - Capture audio directly in your browser
+
+## Creating a Custom Voice
+
+<Steps>
+  <Step title="Open Voice Cloning Dialog">
+    Click **Voice cloning** from the sidebar menu, or navigate to the Voices page and click "Create Voice".
+  </Step>
+
+  <Step title="Choose Input Method">
+    Select how you'll provide the voice sample:
+    
+    <Tabs>
+      <Tab title="Upload">
+        Upload an existing audio file from your computer.
+        
+        **Supported formats:**
+        - All audio formats (MP3, WAV, M4A, FLAC, etc.)
+        - Maximum file size: **20 MB**
+        
+        **Upload methods:**
+        - Click "Upload file" button
+        - Drag and drop audio file into the dropzone
+      </Tab>
+      
+      <Tab title="Record">
+        Record audio directly using your microphone.
+        
+        1. Click **Record** to start capturing
+        2. Speak clearly into your microphone
+        3. Monitor the waveform visualization in real-time
+        4. Click **Stop** when finished
+        5. Preview the recording with the play button
+        6. Re-record if needed
+        
+        <Tip>
+          For best results, record in a quiet environment with minimal background noise.
+        </Tip>
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Preview Your Audio">
+    After uploading or recording:
+    - Click the **Play** button to preview
+    - View file size and duration
+    - Click **X** or **Re-record** to start over
+  </Step>
+
+  <Step title="Enter Voice Details">
+    <AccordionGroup>
+      <Accordion title="Voice Label" icon="tag">
+        Give your voice a descriptive name.
+        
+        **Examples:**
+        - "CEO Voice - John Smith"
+        - "Brand Narrator"
+        - "Customer Support Agent"
+        - "Hero Character"
+      </Accordion>
+      
+      <Accordion title="Category" icon="layers">
+        Select the category that best describes this voice's intended use:
+        
+        - **General** - Multi-purpose voice
+        - **Audiobook** - Long-form narration
+        - **Conversational** - Natural dialogue
+        - **Customer Service** - Support and assistance
+        - **Narrative** - Storytelling and narration
+        - **Characters** - Voice acting and characters
+        - **Meditation** - Calm, soothing guidance
+        - **Motivational** - Inspiring and energetic
+        - **Podcast** - Interview and discussion
+        - **Advertising** - Promotional content
+        - **Voiceover** - Professional VO work
+        - **Corporate** - Business and training
+      </Accordion>
+      
+      <Accordion title="Language" icon="globe">
+        Choose the language and locale for this voice.
+        
+        Search from a comprehensive list of language codes:
+        - English (United States) - `en-US`
+        - English (United Kingdom) - `en-GB`
+        - Spanish (Spain) - `es-ES`
+        - And many more regional variants
+        
+        Default: **en-US**
+      </Accordion>
+      
+      <Accordion title="Description (Optional)" icon="align-left">
+        Add notes about:
+        - When to use this voice
+        - Tone and characteristics
+        - Best use cases
+        - Any special considerations
+        
+        This helps team members choose the right voice.
+      </Accordion>
+    </AccordionGroup>
+  </Step>
+
+  <Step title="Create Voice">
+    Click **Create Voice** to process and save the voice.
+    
+    The system will:
+    1. Upload the audio to secure storage (R2)
+    2. Process and optimize the voice sample
+    3. Make it available to your organization
+    4. Add it to your Team Voices list
+  </Step>
+</Steps>
+
+## Using Custom Voices
+
+Once created, your custom voice appears in:
+
+1. **Text to Speech page** - Under "Team Voices" in the voice selector
+2. **Voices page** - In your organization's voice library
+
+All organization members can:
+- Generate audio using the custom voice
+- View voice details
+- Preview the original voice sample
+
+<Info>
+  Custom voices are **organization-scoped**. Only members of your organization can access them.
+</Info>
+
+## Managing Custom Voices
+
+### View All Voices
+
+Navigate to `/voices` to see:
+- All custom voices created by your team
+- Built-in system voices
+- Voice categories and metadata
+- Search and filter options
+
+### Delete a Voice
+
+<Warning>
+  Deleting a voice is permanent and cannot be undone. Any existing audio generated with this voice will still be accessible, but you won't be able to create new generations.
+</Warning>
+
+To delete a custom voice:
+1. Go to the Voices page
+2. Find the voice you want to remove
+3. Click the delete/trash icon
+4. Confirm the deletion
+
+The voice and its associated audio file will be removed from storage.
+
+## Voice Quality Tips
+
+<CardGroup cols={2}>
+  <Card title="Recording Environment" icon="microphone-lines">
+    - Use a quiet room
+    - Minimize background noise
+    - Avoid echo (use soft furnishings)
+    - Position mic 6-12 inches away
+  </Card>
+  
+  <Card title="Audio Sample" icon="waveform">
+    - Speak naturally and clearly
+    - Maintain consistent volume
+    - Include varied intonation
+    - Aim for 30-60 seconds minimum
+  </Card>
+  
+  <Card title="File Quality" icon="file-audio">
+    - Use lossless formats when possible (WAV, FLAC)
+    - Minimum 16-bit, 44.1kHz recommended
+    - Avoid heavy compression
+    - Keep under 20 MB
+  </Card>
+  
+  <Card title="Voice Characteristics" icon="sparkles">
+    - Choose expressive samples
+    - Include natural pauses
+    - Avoid monotone delivery
+    - Match intended use case
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+### For Professional Voiceovers
+
+- Record with a quality microphone
+- Use a pop filter to reduce plosives
+- Include a variety of emotional tones
+- Record multiple takes and choose the best
+
+### For Brand Voices
+
+- Use the same speaker across all samples
+- Match your brand's tone and personality
+- Create separate voices for different use cases
+- Document usage guidelines in the description
+
+### For Character Voices
+
+- Exaggerate character traits in the sample
+- Include emotional range (happy, sad, excited)
+- Record longer samples (60+ seconds)
+- Test with varied text before finalizing
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Microphone Not Working">
+    - Grant browser permission to access microphone
+    - Check system microphone settings
+    - Try a different browser (Chrome recommended)
+    - Verify microphone is connected and working
+  </Accordion>
+  
+  <Accordion title="File Upload Failed">
+    - Ensure file is under 20 MB
+    - Verify it's a valid audio format
+    - Check your internet connection
+    - Try converting to WAV or MP3
+  </Accordion>
+  
+  <Accordion title="Poor Voice Quality">
+    - Re-record with better audio quality
+    - Reduce background noise
+    - Use a longer audio sample
+    - Ensure clear, natural speech
+  </Accordion>
+  
+  <Accordion title="Voice Not Appearing">
+    - Refresh the page
+    - Check you're in the correct organization
+    - Verify the voice was successfully created
+    - Contact support if issue persists
+  </Accordion>
+</AccordionGroup>
+
+## Organization Sharing
+
+Custom voices are shared across your entire organization:
+
+- All members can use team voices for generation
+- Voice library is organization-wide
+- Permissions are managed through Clerk Organizations
+- See [Managing Organizations](/guides/managing-organizations) for details
+
+## Next Steps
+
+- [Generate speech](/guides/generating-speech) with your custom voice
+- [Manage your team](/guides/managing-organizations) and control access
+- [Monitor usage](/guides/usage-billing) to track voice clone usage

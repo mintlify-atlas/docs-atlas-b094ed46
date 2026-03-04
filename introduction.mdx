@@ -1,0 +1,90 @@
+---
+title: Introduction
+description: Welcome to Resonance - the open-source ElevenLabs alternative for AI-powered text-to-speech and voice cloning
+---
+
+Resonance is an open-source text-to-speech and voice cloning platform built with modern web technologies. It provides professional-grade voice synthesis powered by Chatterbox TTS, with a clean and responsive interface built on Next.js 16 and React 19.
+
+## What is Resonance?
+
+Resonance is a self-hostable alternative to commercial TTS services like ElevenLabs. It combines cutting-edge AI voice synthesis with a production-ready web application that includes authentication, billing, and multi-tenant organization support.
+
+The platform leverages serverless GPU infrastructure to provide cost-effective, pay-per-use text-to-speech generation without the overhead of managing ML infrastructure.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Text-to-Speech" icon="microphone">
+    Generate natural-sounding speech from text with adjustable creativity, variety, expression, and flow parameters. Fine-tune temperature, top-p, top-k, and repetition penalty for precise control.
+  </Card>
+  
+  <Card title="Zero-Shot Voice Cloning" icon="clone">
+    Upload or record a voice sample (10s minimum) and clone it instantly. No fine-tuning or training required - the model adapts immediately to new voices.
+  </Card>
+  
+  <Card title="20 Built-in Voices" icon="users">
+    Pre-seeded system voices across 12 categories including Audiobook, Conversational, Narrative, Characters, Meditation, Podcast, and more. Supports 5 locales (en-US, en-GB, es-ES, fr-FR, de-DE).
+  </Card>
+  
+  <Card title="Multi-Tenant Architecture" icon="building">
+    Team-based access via Clerk Organizations with full data isolation. Each organization has separate voice libraries and generation history.
+  </Card>
+  
+  <Card title="Usage-Based Billing" icon="credit-card">
+    Pay-as-you-go character metering integrated with Polar. Track usage in real-time and configure custom pricing tiers.
+  </Card>
+  
+  <Card title="Generation History" icon="clock-rotate-left">
+    Browse and replay all past generations with preserved voice metadata and synthesis parameters. Never lose your audio outputs.
+  </Card>
+</CardGroup>
+
+## Technology Stack
+
+Resonance is built with best-in-class open-source technologies:
+
+- **Next.js 16** - React framework with App Router
+- **React 19** - Latest React with concurrent features
+- **tRPC** - End-to-end typesafe APIs
+- **Prisma** - Type-safe database ORM with PostgreSQL
+- **Chatterbox TTS** - Open-source zero-shot voice cloning model by Resemble AI
+- **Modal** - Serverless GPU infrastructure
+- **Cloudflare R2** - S3-compatible object storage
+- **Clerk** - Authentication and organization management
+- **Polar** - Usage-based billing and metering
+
+## Use Cases
+
+<AccordionGroup>
+  <Accordion title="Content Creation">
+    Generate voiceovers for videos, podcasts, and audiobooks. Clone your own voice or use pre-built voices to maintain consistency across content.
+  </Accordion>
+  
+  <Accordion title="Accessibility">
+    Convert written content to audio for visually impaired users or create audio versions of documentation and articles.
+  </Accordion>
+  
+  <Accordion title="Prototyping">
+    Quickly test voice interfaces and conversational AI applications without recording audio.
+  </Accordion>
+  
+  <Accordion title="Localization">
+    Create voice content in multiple languages and accents using the built-in locale support.
+  </Accordion>
+  
+  <Accordion title="Education">
+    Generate audio learning materials, language practice content, or narration for educational videos.
+  </Accordion>
+</AccordionGroup>
+
+## Open Source
+
+Resonance is fully open-source and available on [GitHub](https://github.com/code-with-antonio/resonance). It's designed to be self-hosted on your own infrastructure, giving you complete control over your data and costs.
+
+<Note>
+Resonance is also available as a free 12-hour video course that teaches you how to build the entire project from scratch. Each chapter has a corresponding Git branch for easy reference.
+</Note>
+
+## Getting Started
+
+Ready to get started? Check out the [Quickstart](/quickstart) guide to run Resonance locally, or dive into the [Architecture](/architecture) documentation to understand how everything works together.

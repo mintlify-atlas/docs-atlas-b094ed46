@@ -1,0 +1,86 @@
+---
+title: 'Introduction'
+description: 'Getting started with the Resonance tRPC API'
+---
+
+## Overview
+
+Resonance uses [tRPC](https://trpc.io) to provide a type-safe API for building text-to-speech applications. The API is organized into three main routers:
+
+- **Voices** - Manage custom and system voices
+- **Generations** - Create and retrieve TTS generations
+- **Billing** - Handle subscriptions and usage tracking
+
+## Architecture
+
+### tRPC Setup
+
+Resonance uses tRPC with the following configuration:
+
+<CodeGroup>
+```typescript src/trpc/init.ts
+import { initTRPC, TRPCError } from '@trpc/server';
+import { auth } from '@clerk/nextjs/server';
+import superjson from "superjson";
+
+const t = initTRPC.create({
+  transformer: superjson,
+});
+
+export const createTRPCRouter = t.router;
+export const baseProcedure = t.procedure;
+```
+
+```typescript src/trpc/routers/_app.ts
+import { createTRPCRouter } from '../init';
+import { billingRouter } from './billing';
+import { generationsRouter } from './generations';
+import { voicesRouter } from './voices';
+
+export const appRouter = createTRPCRouter({
+  voices: voicesRouter,
+  generations: generationsRouter,
+  billing: billingRouter,
+});
+
+export type AppRouter = typeof appRouter;
+```
+</CodeGroup>
+
+## Data Transformation
+
+The API uses [SuperJSON](https://github.com/blitz-js/superjson) for serialization, which allows for:
+
+- **Date objects** to be preserved across the wire
+- **BigInt** support for large numbers
+- **Map and Set** objects
+- **Undefined** values in objects
+
+## Error Handling
+
+All endpoints use tRPC's standardized error codes:
+
+| Code | Description | HTTP Status |
+|------|-------------|-------------|
+| `UNAUTHORIZED` | User not authenticated | 401 |
+| `FORBIDDEN` | Missing permissions or subscription | 403 |
+| `NOT_FOUND` | Resource not found | 404 |
+| `PRECONDITION_FAILED` | Required condition not met | 412 |
+| `INTERNAL_SERVER_ERROR` | Server-side error | 500 |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="lock" href="/api/authentication">
+    Learn about Clerk-based authentication
+  </Card>
+  <Card title="Voices API" icon="microphone" href="/api/voices">
+    Manage voice clones
+  </Card>
+  <Card title="Generations API" icon="waveform-lines" href="/api/generations">
+    Generate speech audio
+  </Card>
+  <Card title="Billing API" icon="credit-card" href="/api/billing">
+    Handle subscriptions
+  </Card>
+</CardGroup>

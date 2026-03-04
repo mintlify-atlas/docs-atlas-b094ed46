@@ -1,0 +1,367 @@
+---
+title: 'Voice Cloning'
+description: 'Create custom voice clones from audio samples'
+icon: 'microphone'
+---
+
+## Overview
+
+Voice cloning allows you to create custom voices from audio samples. Upload a recording or record directly in the browser to generate a voice that can be used for text-to-speech generation.
+
+## Requirements
+
+<Note>
+  Voice creation requires an active subscription. The API will return `SUBSCRIPTION_REQUIRED` (403) without an active plan.
+</Note>
+
+### Audio Requirements
+
+<ParamField path="file" type="File" required>
+  Audio file containing the voice sample
+  - **Maximum size**: 20 MB
+  - **Minimum duration**: 10 seconds
+  - **Supported formats**: All audio formats (WAV, MP3, M4A, FLAC, etc.)
+  - **Content-Type**: Must match actual audio format
+</ParamField>
+
+<Warning>
+  Audio files shorter than 10 seconds will be rejected with error: `Audio too short (X.Xs). Minimum duration is 10 seconds.`
+</Warning>
+
+### Voice Metadata
+
+<ParamField path="name" type="string" required>
+  Display name for the voice
+  - **Minimum length**: 1 character
+  - This name will appear in voice selectors
+</ParamField>
+
+<ParamField path="category" type="enum" required>
+  Voice category for organization
+  
+  Available categories:
+  - `AUDIOBOOK` - Audiobook narration
+  - `CONVERSATIONAL` - Natural conversation
+  - `CUSTOMER_SERVICE` - Support and service
+  - `GENERAL` - General purpose (default)
+  - `NARRATIVE` - Storytelling
+  - `CHARACTERS` - Character voices
+  - `MEDITATION` - Calm and soothing
+  - `MOTIVATIONAL` - Energetic and inspiring
+  - `PODCAST` - Podcast hosting
+  - `ADVERTISING` - Marketing and ads
+  - `VOICEOVER` - Professional voiceover
+  - `CORPORATE` - Business presentations
+</ParamField>
+
+<ParamField path="language" type="string" required>
+  Language code for the voice
+  - **Format**: BCP 47 language tag (e.g., `en-US`, `es-MX`, `fr-FR`)
+  - **Default**: `en-US`
+  - Supports all locale-codes locales with region (e.g., `en-US`, not just `en`)
+</ParamField>
+
+<ParamField path="description" type="string" optional>
+  Optional description of the voice characteristics
+  - Helps identify and organize voices
+  - Searchable in voice library
+</ParamField>
+
+## Creation Methods
+
+<Tabs>
+  <Tab title="Upload File">
+    Upload an existing audio file from your device.
+
+    <Steps>
+      <Step title="Select upload method">
+        Click the "Upload" tab in the voice creation dialog.
+      </Step>
+      
+      <Step title="Choose file">
+        - Click "Upload file" or drag and drop
+        - File must be under 20 MB
+        - Preview and playback available after upload
+      </Step>
+      
+      <Step title="Fill metadata">
+        - Enter voice name
+        - Select category
+        - Choose language
+        - Add optional description
+      </Step>
+      
+      <Step title="Create voice">
+        Click "Create Voice" to process and upload the audio.
+      </Step>
+    </Steps>
+
+    ```typescript
+    // File dropzone configuration
+    const dropzone = useDropzone({
+      accept: { "audio/*": [] },
+      maxSize: 20 * 1024 * 1024, // 20 MB
+      multiple: false,
+      onDrop: (acceptedFiles) => {
+        if (acceptedFiles.length > 0) {
+          onFileChange(acceptedFiles[0]);
+        }
+      },
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Record Audio">
+    Record audio directly in the browser using your microphone.
+
+    <Steps>
+      <Step title="Select record method">
+        Click the "Record" tab in the voice creation dialog.
+      </Step>
+      
+      <Step title="Grant microphone access">
+        Allow browser to access your microphone when prompted.
+      </Step>
+      
+      <Step title="Record voice sample">
+        - Click "Record" to start
+        - Speak clearly for at least 10 seconds
+        - Real-time waveform visualization shown
+        - Click "Stop" when finished
+      </Step>
+      
+      <Step title="Review recording">
+        - Playback the recording
+        - Re-record if needed
+        - See duration and file size
+      </Step>
+      
+      <Step title="Complete metadata">
+        Fill in voice name, category, language, and description.
+      </Step>
+      
+      <Step title="Create voice">
+        Click "Create Voice" to upload the recording.
+      </Step>
+    </Steps>
+
+    <Note>
+      Recordings are saved as WAV files with the filename `recording.wav`.
+    </Note>
+  </Tab>
+</Tabs>
+
+## API Workflow
+
+Voice creation uses a REST API endpoint (not tRPC) due to file upload requirements:
+
+### Endpoint
+
+```
+POST /api/voices/create
+```
+
+### Request Format
+
+```typescript
+// Query parameters
+const params = new URLSearchParams({
+  name: "My Voice",
+  category: "CONVERSATIONAL",
+  language: "en-US",
+  description: "A friendly conversational voice", // optional
+});
+
+// Request body: raw audio file
+const response = await fetch(`/api/voices/create?${params.toString()}`, {
+  method: "POST",
+  headers: { 
+    "Content-Type": file.type, // e.g., "audio/wav"
+  },
+  body: file, // File object
+});
+```
+
+### Validation Steps
+
+The API performs several validation checks:
+
+<Steps>
+  <Step title="Authentication">
+    Verify user is authenticated (Clerk auth)
+  </Step>
+  
+  <Step title="Subscription check">
+    Confirm active subscription exists in Polar
+  </Step>
+  
+  <Step title="Input validation">
+    Validate query parameters match schema
+  </Step>
+  
+  <Step title="File size check">
+    Ensure file is under 20 MB limit
+  </Step>
+  
+  <Step title="Audio format validation">
+    Parse audio metadata using `music-metadata`
+  </Step>
+  
+  <Step title="Duration check">
+    Verify audio is at least 10 seconds long
+  </Step>
+  
+  <Step title="Database creation">
+    Create voice record with variant `CUSTOM`
+  </Step>
+  
+  <Step title="Cloud upload">
+    Upload audio to R2 storage at `voices/orgs/{orgId}/{voiceId}`
+  </Step>
+  
+  <Step title="Update record">
+    Store R2 object key in database
+  </Step>
+  
+  <Step title="Usage tracking">
+    Send `voice_creation` event to Polar (fire-and-forget)
+  </Step>
+</Steps>
+
+### Response
+
+**Success (201)**:
+```json
+{
+  "name": "My Voice",
+  "message": "Voice created successfully"
+}
+```
+
+**Error Responses**:
+
+<AccordionGroup>
+  <Accordion title="401 Unauthorized">
+    User is not authenticated or organization context is missing.
+  </Accordion>
+  
+  <Accordion title="403 SUBSCRIPTION_REQUIRED">
+    No active subscription found for the organization.
+  </Accordion>
+  
+  <Accordion title="400 Invalid Input">
+    Query parameters failed validation (missing name, invalid category, etc.).
+  </Accordion>
+  
+  <Accordion title="400 Missing Content-Type">
+    Request must include Content-Type header matching audio format.
+  </Accordion>
+  
+  <Accordion title="413 File Too Large">
+    Audio file exceeds the 20 MB size limit.
+  </Accordion>
+  
+  <Accordion title="422 Invalid Audio File">
+    File is not a valid audio file or cannot be parsed.
+  </Accordion>
+  
+  <Accordion title="422 Audio Too Short">
+    Audio duration is less than 10 seconds minimum.
+  </Accordion>
+  
+  <Accordion title="500 Creation Failed">
+    Voice creation or upload failed. Partial data is automatically cleaned up.
+  </Accordion>
+</AccordionGroup>
+
+## Storage Structure
+
+Custom voices are stored with the following structure:
+
+```
+voices/orgs/{orgId}/{voiceId}
+```
+
+- **Organization scoped**: Each org's voices are isolated
+- **Unique IDs**: Voice IDs are generated using CUID
+- **Variant**: Custom voices have `variant: "CUSTOM"`
+- **Ownership**: Linked to creating organization via `orgId`
+
+## Usage Tracking
+
+Voice creation is metered for billing:
+
+```typescript
+polar.events.ingest({
+  events: [{
+    name: "voice_creation",
+    externalCustomerId: orgId,
+    metadata: {},
+    timestamp: new Date(),
+  }],
+});
+```
+
+<Note>
+  Usage tracking is fire-and-forget. Tracking failures won't block voice creation.
+</Note>
+
+## Best Practices
+
+1. **Audio Quality**: Use high-quality audio samples with minimal background noise
+2. **Duration**: Longer samples (30+ seconds) typically produce better clones
+3. **Consistency**: Single speaker, consistent volume and tone
+4. **Language**: Ensure audio matches selected language code
+5. **Categories**: Choose appropriate category for better organization
+
+## Example Implementation
+
+```typescript
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+
+const createVoiceMutation = useMutation({
+  mutationFn: async ({
+    name,
+    file,
+    category,
+    language,
+    description,
+  }: {
+    name: string;
+    file: File;
+    category: string;
+    language: string;
+    description?: string;
+  }) => {
+    const params = new URLSearchParams({
+      name,
+      category,
+      language,
+    });
+    if (description) {
+      params.set("description", description);
+    }
+
+    const response = await fetch(`/api/voices/create?${params.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": file.type },
+      body: file,
+    });
+
+    if (!response.ok) {
+      const body = await response.json();
+      throw new Error(body.error ?? "Failed to create voice");
+    }
+
+    return response.json();
+  },
+  onSuccess: () => {
+    toast.success("Voice created successfully!");
+    queryClient.invalidateQueries({ queryKey: ['voices'] });
+  },
+  onError: (error) => {
+    toast.error(error.message);
+  },
+});
+```

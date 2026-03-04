@@ -1,0 +1,440 @@
+---
+title: 'Audio Player'
+description: 'WaveSurfer.js-powered audio playback with waveform visualization'
+icon: 'circle-play'
+---
+
+## Overview
+
+Resonance uses [WaveSurfer.js](https://wavesurfer.xyz/) to provide an interactive audio player with waveform visualization. The player supports playback controls, seeking, and real-time progress tracking.
+
+## WaveSurfer Hook
+
+The `useWaveSurfer` hook manages WaveSurfer initialization and state:
+
+```typescript
+import { useWaveSurfer } from '@/features/text-to-speech/hooks/use-wavesurfer';
+
+function AudioPlayer({ url }: { url: string }) {
+  const {
+    containerRef,      // Attach to waveform container
+    isPlaying,         // Playback state
+    isReady,           // Loading state
+    currentTime,       // Current position (seconds)
+    duration,          // Total duration (seconds)
+    togglePlayPause,   // Play/pause toggle
+    seekForward,       // Skip forward
+    seekBackward,      // Skip backward
+  } = useWaveSurfer({
+    url,
+    autoplay: false,
+    onReady: () => console.log('Audio ready'),
+    onError: (error) => console.error('Audio error:', error),
+  });
+
+  return (
+    <div>
+      <div ref={containerRef} />
+      <button onClick={togglePlayPause}>
+        {isPlaying ? 'Pause' : 'Play'}
+      </button>
+    </div>
+  );
+}
+```
+
+## Configuration
+
+WaveSurfer is initialized with Resonance's design system colors:
+
+```typescript
+const ws = WaveSurfer.create({
+  container: containerRef.current,
+  waveColor: "#96999D",      // --muted-foreground
+  progressColor: "#4A8A9A",   // --chart-1 (teal-cyan)
+  cursorColor: "#4A8A9A",     // --chart-1
+  cursorWidth: 2,
+  barWidth: 2,
+  barGap: 2,
+  barRadius: 2,
+  barMinHeight: 4,
+  height: "auto",             // Responsive height
+  normalize: true,            // Normalize waveform amplitude
+});
+```
+
+### Color Customization
+
+<Tabs>
+  <Tab title="Design Tokens">
+    ```css
+    --muted-foreground: #96999D  /* Unplayed waveform */
+    --chart-1: #4A8A9A           /* Progress and cursor */
+    ```
+  </Tab>
+  
+  <Tab title="Custom Colors">
+    Override colors in the WaveSurfer config:
+    ```typescript
+    waveColor: "#custom-color",
+    progressColor: "#custom-progress",
+    cursorColor: "#custom-cursor",
+    ```
+  </Tab>
+</Tabs>
+
+## Playback Controls
+
+### Play/Pause
+
+```typescript
+const { togglePlayPause, isPlaying } = useWaveSurfer({ url });
+
+<button onClick={togglePlayPause}>
+  {isPlaying ? (
+    <PauseIcon className="size-4" />
+  ) : (
+    <PlayIcon className="size-4" />
+  )}
+</button>
+```
+
+### Skip Forward/Backward
+
+```typescript
+const { seekForward, seekBackward } = useWaveSurfer({ url });
+
+// Skip 5 seconds forward
+<button onClick={() => seekForward(5)}>
+  <FastForwardIcon />
+</button>
+
+// Skip 5 seconds backward
+<button onClick={() => seekBackward(5)}>
+  <RewindIcon />
+</button>
+```
+
+Default skip duration is 5 seconds if not specified:
+
+```typescript
+const seekForward = useCallback((seconds = 5) => {
+  const ws = wavesurferRef.current;
+  if (!ws) return;
+
+  const newTime = Math.min(
+    ws.getCurrentTime() + seconds,
+    ws.getDuration()
+  );
+  ws.seekTo(newTime / ws.getDuration());
+}, []);
+```
+
+## Progress Tracking
+
+### Current Time and Duration
+
+```typescript
+const { currentTime, duration } = useWaveSurfer({ url });
+
+function formatTime(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+<div>
+  <span>{formatTime(currentTime)}</span>
+  <span> / </span>
+  <span>{formatTime(duration)}</span>
+</div>
+```
+
+### Progress Bar
+
+The waveform itself acts as a visual progress indicator:
+
+- **Gray waveform**: Unplayed portion
+- **Teal waveform**: Played portion
+- **Cursor line**: Current playback position
+
+### Loading State
+
+```typescript
+const { isReady } = useWaveSurfer({ url });
+
+if (!isReady) {
+  return <Spinner />;
+}
+
+return <AudioPlayer />;
+```
+
+## Events
+
+WaveSurfer fires several events that the hook manages:
+
+```typescript
+ws.on("ready", () => {
+  setIsReady(true);
+  setDuration(ws.getDuration());
+  
+  // Autoplay if enabled
+  if (autoplay) {
+    ws.play().catch(() => {}); // Handle browser autoplay blocks
+  }
+  
+  onReady?.();
+});
+
+ws.on("play", () => setIsPlaying(true));
+ws.on("pause", () => setIsPlaying(false));
+ws.on("finish", () => setIsPlaying(false));
+ws.on("timeupdate", (time) => setCurrentTime(time));
+
+ws.on("error", (error) => {
+  console.error("WaveSurfer error:", error);
+  onError?.(new Error(String(error)));
+});
+```
+
+## Autoplay Handling
+
+<Warning>
+  Browsers often block autoplay without user interaction. The hook catches `NotAllowedError` gracefully.
+</Warning>
+
+```typescript
+if (autoplay) {
+  ws.play().catch(() => {
+    // Silent fail - browser blocked autoplay
+    // User must click play button
+  });
+}
+```
+
+### Enable Autoplay
+
+```typescript
+const player = useWaveSurfer({
+  url,
+  autoplay: true, // Attempt autoplay (may be blocked)
+});
+```
+
+## Mobile Responsiveness
+
+The waveform adapts to mobile screens:
+
+```typescript
+import { useIsMobile } from '@/hooks/use-mobile';
+
+function useWaveSurfer({ url, autoplay, onReady, onError }) {
+  const isMobile = useIsMobile();
+  
+  useEffect(() => {
+    // Re-initialize on mobile/desktop change
+    // Adjusts bar width and spacing
+  }, [url, autoplay, onReady, onError, isMobile]);
+}
+```
+
+## Cleanup
+
+WaveSurfer instances are properly cleaned up:
+
+```typescript
+useEffect(() => {
+  const ws = WaveSurfer.create({ /* ... */ });
+  wavesurferRef.current = ws;
+
+  let destroyed = false;
+
+  ws.load(url).catch((error) => {
+    if (destroyed) return; // Ignore errors after cleanup
+    onError?.(new Error(String(error)));
+  });
+
+  return () => {
+    destroyed = true;
+    ws.destroy(); // Clean up WaveSurfer instance
+  };
+}, [url, autoplay, onReady, onError, isMobile]);
+```
+
+## Complete Example
+
+Full audio player implementation:
+
+```typescript
+import { useWaveSurfer } from '@/features/text-to-speech/hooks/use-wavesurfer';
+import { Play, Pause, SkipBack, SkipForward } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+
+interface AudioPlayerProps {
+  url: string;
+  autoplay?: boolean;
+}
+
+export function AudioPlayer({ url, autoplay = false }: AudioPlayerProps) {
+  const {
+    containerRef,
+    isPlaying,
+    isReady,
+    currentTime,
+    duration,
+    togglePlayPause,
+    seekForward,
+    seekBackward,
+  } = useWaveSurfer({
+    url,
+    autoplay,
+    onReady: () => console.log('Audio loaded'),
+    onError: (error) => console.error('Playback error:', error),
+  });
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  if (!isReady) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <div className="animate-spin">Loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Waveform visualization */}
+      <div ref={containerRef} className="w-full" />
+
+      {/* Playback controls */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            onClick={() => seekBackward(5)}
+            title="Skip backward 5s"
+          >
+            <SkipBack className="size-4" />
+          </Button>
+
+          <Button
+            size="icon"
+            variant="default"
+            onClick={togglePlayPause}
+            title={isPlaying ? 'Pause' : 'Play'}
+          >
+            {isPlaying ? (
+              <Pause className="size-5" />
+            ) : (
+              <Play className="size-5" />
+            )}
+          </Button>
+
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            onClick={() => seekForward(5)}
+            title="Skip forward 5s"
+          >
+            <SkipForward className="size-4" />
+          </Button>
+        </div>
+
+        {/* Time display */}
+        <div className="text-sm text-muted-foreground">
+          {formatTime(currentTime)} / {formatTime(duration)}
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+## Keyboard Controls
+
+<Note>
+  WaveSurfer doesn't include built-in keyboard controls. Implement shortcuts using event listeners if needed.
+</Note>
+
+```typescript
+useEffect(() => {
+  const handleKeyPress = (e: KeyboardEvent) => {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      togglePlayPause();
+    } else if (e.code === 'ArrowLeft') {
+      e.preventDefault();
+      seekBackward(5);
+    } else if (e.code === 'ArrowRight') {
+      e.preventDefault();
+      seekForward(5);
+    }
+  };
+
+  window.addEventListener('keydown', handleKeyPress);
+  return () => window.removeEventListener('keydown', handleKeyPress);
+}, [togglePlayPause, seekForward, seekBackward]);
+```
+
+## Advanced Features
+
+### Click to Seek
+
+WaveSurfer supports clicking the waveform to seek:
+
+```typescript
+// Built-in: Click anywhere on the waveform to jump to that position
+```
+
+### Waveform Normalization
+
+```typescript
+WaveSurfer.create({
+  normalize: true, // Scale waveform to container height
+});
+```
+
+Normalization ensures the waveform fills the container regardless of audio volume.
+
+### Multiple Playback Speeds
+
+```typescript
+const wavesurfer = wavesurferRef.current;
+if (wavesurfer) {
+  wavesurfer.setPlaybackRate(1.5); // 1.5x speed
+}
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Audio doesn't load">
+    - Verify the URL is correct and accessible
+    - Check CORS headers if loading cross-origin audio
+    - Ensure audio format is supported by the browser
+  </Accordion>
+  
+  <Accordion title="Waveform not visible">
+    - Ensure the container has a defined width
+    - Check that the ref is properly attached
+    - Verify WaveSurfer CSS is loaded
+  </Accordion>
+  
+  <Accordion title="Autoplay blocked">
+    - Browsers block autoplay without user interaction
+    - Use `autoplay: false` and require manual play button
+    - Or mute audio initially (`muted: true` option)
+  </Accordion>
+  
+  <Accordion title="Memory leaks">
+    - Ensure the cleanup function calls `ws.destroy()`
+    - Don't create multiple instances without destroying old ones
+  </Accordion>
+</AccordionGroup>

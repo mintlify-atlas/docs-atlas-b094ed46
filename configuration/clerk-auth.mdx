@@ -1,0 +1,489 @@
+---
+title: Clerk Authentication
+description: Set up authentication and multi-tenant organizations with Clerk
+icon: shield
+---
+
+Resonance uses [Clerk](https://clerk.com) for authentication and multi-tenancy via Organizations. Clerk provides secure user management, social sign-in, and team collaboration features.
+
+## Why Clerk?
+
+- **Organizations Built-in** - Multi-tenant architecture with role-based access
+- **Zero Backend Auth Code** - Fully managed authentication
+- **Beautiful UI Components** - Pre-built sign-in/sign-up flows
+- **Social Sign-In** - Google, GitHub, Microsoft, and more
+- **Free Tier** - 10,000 monthly active users
+
+## Prerequisites
+
+- Clerk account ([sign up free](https://dashboard.clerk.com/sign-up))
+- Application created in Clerk Dashboard
+
+## Quick Setup
+
+<Steps>
+  <Step title="Create Clerk application">
+    1. Go to [Clerk Dashboard](https://dashboard.clerk.com)
+    2. Click **Create Application**
+    3. Name your app: `Resonance` (or your preferred name)
+    4. Choose authentication methods:
+       - Email + Password
+       - Social sign-in (Google, GitHub, etc.)
+    5. Click **Create Application**
+  </Step>
+  
+  <Step title="Enable Organizations">
+    Organizations are required for multi-tenancy:
+    
+    1. Navigate to **Configure → Organizations**
+    2. Enable **Organizations**
+    3. Configure settings:
+       - **Creation:** Allow users to create organizations
+       - **Membership:** Invite-based or open
+       - **Roles:** Admin, Member (default)
+    4. Click **Save**
+    
+    <Note>
+      Each Clerk organization maps to a separate tenant in Resonance with isolated voices and generations.
+    </Note>
+  </Step>
+  
+  <Step title="Copy API keys">
+    Navigate to **API Keys** and copy:
+    
+    - **Publishable Key** (starts with `pk_`)
+    - **Secret Key** (starts with `sk_`)
+    
+    <Warning>
+      Never commit the Secret Key to version control. Store it securely in `.env.local`.
+    </Warning>
+  </Step>
+  
+  <Step title="Configure environment variables">
+    Add Clerk credentials to `.env.local`:
+    
+    ```env .env.local
+    CLERK_SECRET_KEY="sk_test_..."
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
+    NEXT_PUBLIC_CLERK_SIGN_IN_URL="/sign-in"
+    NEXT_PUBLIC_CLERK_SIGN_UP_URL="/sign-up"
+    ```
+  </Step>
+  
+  <Step title="Configure redirect URLs">
+    In Clerk Dashboard, go to **Paths**:
+    
+    Set these URLs:
+    - **Sign-in page:** `/sign-in`
+    - **Sign-up page:** `/sign-up`
+    - **After sign-in:** `/`
+    - **After sign-up:** `/`
+    
+    For production, add your domain:
+    ```
+    https://yourdomain.com/sign-in
+    https://yourdomain.com/sign-up
+    ```
+  </Step>
+</Steps>
+
+## Integration Overview
+
+Clerk is integrated throughout the application:
+
+### Middleware
+
+Protects all routes except public pages:
+
+```typescript src/middleware.ts
+import { clerkMiddleware } from "@clerk/nextjs/server";
+
+export default clerkMiddleware();
+
+export const config = {
+  matcher: [
+    // Protect all routes except static assets
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+  ],
+};
+```
+
+### Auth Pages
+
+Pre-built sign-in and sign-up components:
+
+<CodeGroup>
+```tsx src/app/sign-in/[[...sign-in]]/page.tsx
+import { SignIn } from "@clerk/nextjs";
+
+export default function SignInPage() {
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <SignIn />
+    </div>
+  );
+}
+```
+
+```tsx src/app/sign-up/[[...sign-up]]/page.tsx
+import { SignUp } from "@clerk/nextjs";
+
+export default function SignUpPage() {
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <SignUp />
+    </div>
+  );
+}
+```
+</CodeGroup>
+
+### Organization Context
+
+Access the current organization ID in tRPC procedures:
+
+```typescript src/trpc/init.ts
+import { auth } from "@clerk/nextjs/server";
+
+export const orgProcedure = publicProcedure.use(async ({ next }) => {
+  const { orgId } = await auth();
+  
+  if (!orgId) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "Organization required",
+    });
+  }
+  
+  return next({
+    ctx: { orgId },
+  });
+});
+```
+
+Used throughout tRPC routers to scope database queries by organization.
+
+## Multi-Tenancy
+
+Resonance uses Clerk Organizations for multi-tenant data isolation.
+
+### Data Scoping
+
+**All custom voices and generations are scoped by `orgId`:**
+
+```typescript
+// Create custom voice (scoped to organization)
+const voice = await prisma.voice.create({
+  data: {
+    name: "My Voice",
+    variant: "CUSTOM",
+    orgId: ctx.orgId, // From Clerk auth()
+  },
+});
+
+// Query generations (organization-scoped)
+const generations = await prisma.generation.findMany({
+  where: {
+    orgId: ctx.orgId, // Only this org's data
+  },
+});
+```
+
+### System Voices
+
+System voices (`variant: SYSTEM`) have `orgId: null` and are visible to all organizations:
+
+```typescript
+// Get voices for current organization
+const voices = await prisma.voice.findMany({
+  where: {
+    OR: [
+      { variant: "SYSTEM" },           // All system voices
+      { variant: "CUSTOM", orgId },    // Current org's custom voices
+    ],
+  },
+});
+```
+
+### Organization Roles
+
+Clerk supports role-based access control within organizations:
+
+| Role | Permissions |
+|------|-------------|
+| Admin | Full access - manage members, voices, billing |
+| Member | Read/write voices, create generations |
+
+<Note>
+  Resonance uses the default Clerk roles. You can customize roles in **Clerk Dashboard → Organizations → Roles**.
+</Note>
+
+## User Management
+
+### Organization Switcher
+
+Clerk provides a built-in component for switching between organizations:
+
+```tsx
+import { OrganizationSwitcher } from "@clerk/nextjs";
+
+export function Header() {
+  return (
+    <header>
+      <OrganizationSwitcher
+        hidePersonal
+        afterCreateOrganizationUrl="/"
+        afterSelectOrganizationUrl="/"
+      />
+    </header>
+  );
+}
+```
+
+**Features:**
+- Switch active organization
+- Create new organizations
+- Manage members and invitations
+
+### User Button
+
+Account management dropdown:
+
+```tsx
+import { UserButton } from "@clerk/nextjs";
+
+export function Header() {
+  return (
+    <header>
+      <UserButton
+        afterSignOutUrl="/sign-in"
+        appearance={{
+          elements: {
+            avatarBox: "w-10 h-10",
+          },
+        }}
+      />
+    </header>
+  );
+}
+```
+
+## Billing Integration
+
+Clerk organization IDs are used as external customer IDs in Polar:
+
+```typescript src/trpc/routers/billing.ts
+import { polar } from "@/lib/polar";
+
+export const billingRouter = createTRPCRouter({
+  createCheckout: orgProcedure.mutation(async ({ ctx }) => {
+    const result = await polar.checkouts.create({
+      products: [env.POLAR_PRODUCT_ID],
+      externalCustomerId: ctx.orgId, // Clerk org ID
+      successUrl: env.APP_URL,
+    });
+    
+    return { checkoutUrl: result.url };
+  }),
+  
+  getStatus: orgProcedure.query(async ({ ctx }) => {
+    const customerState = await polar.customers.getStateExternal({
+      externalId: ctx.orgId, // Clerk org ID
+    });
+    
+    return {
+      hasActiveSubscription: customerState.activeSubscriptions.length > 0,
+      estimatedCostCents: /* sum meters */,
+    };
+  }),
+});
+```
+
+Defined in `src/trpc/routers/billing.ts:7`.
+
+**Benefits:**
+- No separate customer database
+- Automatic customer creation on first checkout
+- Organization-level billing (not per-user)
+
+## Authentication Methods
+
+### Email + Password
+
+Default authentication method. Users can sign up with email and password.
+
+### Social Sign-In
+
+Enable OAuth providers in **Clerk Dashboard → User & Authentication → Social Connections**:
+
+- Google
+- GitHub
+- Microsoft
+- Apple
+- LinkedIn
+- And 20+ more
+
+<Steps>
+  <Step title="Enable provider">
+    Toggle on your preferred social provider
+  </Step>
+  
+  <Step title="Configure OAuth app">
+    Follow Clerk's guide to create OAuth app in provider dashboard
+  </Step>
+  
+  <Step title="Add credentials">
+    Enter Client ID and Client Secret in Clerk
+  </Step>
+  
+  <Step title="Test">
+    Sign in with social provider on your sign-in page
+  </Step>
+</Steps>
+
+### Magic Links
+
+Passwordless authentication via email:
+
+1. Enable in **User & Authentication → Email, Phone, Username**
+2. Toggle **Email verification links**
+3. Configure email template (optional)
+
+## Development vs Production
+
+### Development Keys
+
+Test keys (start with `pk_test_` and `sk_test_`):
+- Free unlimited usage
+- Separate user database from production
+- Use for local development
+
+### Production Keys
+
+Live keys (start with `pk_live_` and `sk_live_`):
+- Subject to pricing plan limits
+- Real user data
+- Require domain verification
+
+<Warning>
+  **Never use production keys in development.** Create separate Clerk applications for dev and prod.
+</Warning>
+
+## Domain Configuration
+
+For custom domains in production:
+
+<Steps>
+  <Step title="Add domain in Clerk">
+    Go to **Domains** and add your production domain
+  </Step>
+  
+  <Step title="Verify ownership">
+    Add DNS TXT record as instructed
+  </Step>
+  
+  <Step title="Update redirect URLs">
+    Set production URLs in **Paths** settings
+  </Step>
+  
+  <Step title="Deploy with production keys">
+    Use `pk_live_` and `sk_live_` in production environment
+  </Step>
+</Steps>
+
+## Session Management
+
+Clerk handles session management automatically:
+
+- Sessions are stored in secure HTTP-only cookies
+- Automatic token refresh
+- Session expires after 7 days of inactivity (configurable)
+
+### Server-Side Auth
+
+```typescript
+import { auth } from "@clerk/nextjs/server";
+
+export async function GET() {
+  const { userId, orgId } = await auth();
+  
+  if (!userId) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+  
+  // Use orgId for data scoping
+  const data = await fetchOrgData(orgId);
+  return Response.json(data);
+}
+```
+
+### Client-Side Auth
+
+```tsx
+import { useAuth } from "@clerk/nextjs";
+
+export function MyComponent() {
+  const { isLoaded, userId, orgId } = useAuth();
+  
+  if (!isLoaded) return <div>Loading...</div>;
+  if (!userId) return <div>Sign in required</div>;
+  
+  return <div>Welcome! Org: {orgId}</div>;
+}
+```
+
+## Troubleshooting
+
+### Middleware infinite redirect
+
+If you get stuck in a redirect loop:
+
+1. Check that `/sign-in` and `/sign-up` are **not** protected by middleware
+2. Verify `matcher` config in `src/middleware.ts` excludes auth pages
+3. Clear cookies and try again
+
+### Organization not found
+
+```
+Organization required
+```
+
+**Solution:** Ensure organizations are enabled and the user has created or joined one:
+
+1. Check **Configure → Organizations** is enabled
+2. Prompt users to create an organization on first sign-in
+3. Use `<OrganizationSwitcher />` for easy access
+
+### Invalid Publishable Key
+
+```
+Clerk: Publishable key not valid
+```
+
+**Solution:**
+1. Verify `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` has `NEXT_PUBLIC_` prefix
+2. Check key starts with `pk_test_` or `pk_live_`
+3. Ensure no extra spaces or quotes
+4. Restart dev server after changing `.env.local`
+
+### CORS errors in production
+
+Add your production domain to **Allowed Origins** in Clerk Dashboard:
+
+1. Go to **Settings → Security**
+2. Add `https://yourdomain.com` to allowed origins
+3. Redeploy application
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Environment Variables" icon="key" href="/configuration/environment-variables">
+    Required Clerk environment variables
+  </Card>
+  <Card title="Polar Billing" icon="credit-card" href="/configuration/polar-billing">
+    Organization-based billing with Polar
+  </Card>
+  <Card title="Clerk Documentation" icon="book" href="https://clerk.com/docs">
+    Official Clerk documentation
+  </Card>
+</CardGroup>

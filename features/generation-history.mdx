@@ -1,0 +1,387 @@
+---
+title: 'Generation History'
+description: 'View and replay past text-to-speech generations'
+icon: 'clock-rotate-left'
+---
+
+## Overview
+
+Resonance automatically tracks all text-to-speech generations in your organization's history. Each generation preserves the original text, voice, parameters, and audio output for future reference and regeneration.
+
+## History Data Structure
+
+Each generation record contains:
+
+```typescript
+interface Generation {
+  id: string;               // Unique identifier (CUID)
+  orgId: string;            // Organization owner
+  text: string;             // Original input text
+  voiceName: string;        // Voice name snapshot
+  voiceId?: string | null;  // Voice ID reference
+  audioUrl: string;         // Audio playback URL
+  
+  // Generation parameters
+  temperature: number;      // 0.0 - 2.0
+  topP: number;             // 0.0 - 1.0
+  topK: number;             // 1 - 10000
+  repetitionPenalty: number; // 1.0 - 2.0
+  
+  createdAt: Date;          // Generation timestamp
+  updatedAt: Date;
+}
+```
+
+## Fetching History
+
+Retrieve all generations for your organization:
+
+### Get All Generations
+
+```typescript
+import { trpc } from '@/trpc/client';
+
+const { data: generations } = trpc.generations.getAll.useQuery();
+
+// Returns array sorted by createdAt DESC (newest first)
+```
+
+### Get Single Generation
+
+```typescript
+const { data: generation } = trpc.generations.getById.useQuery({
+  id: "clx1234567890",
+});
+
+if (generation) {
+  console.log('Audio URL:', generation.audioUrl);
+  console.log('Original text:', generation.text);
+  console.log('Voice:', generation.voiceName);
+}
+```
+
+## History UI Component
+
+The history panel displays recent generations:
+
+```typescript
+import { useSuspenseQuery } from '@tanstack/react-query';
+import { useTRPC } from '@/trpc/client';
+import { formatDistanceToNow } from 'date-fns';
+
+function HistoryPanel() {
+  const trpc = useTRPC();
+  const { data: generations } = useSuspenseQuery(
+    trpc.generations.getAll.queryOptions()
+  );
+
+  if (!generations.length) {
+    return <EmptyHistoryState />;
+  }
+
+  return (
+    <div className="flex flex-col gap-1 p-2">
+      {generations.map((generation) => (
+        <Link
+          href={`/text-to-speech/${generation.id}`}
+          key={generation.id}
+          className="flex items-center gap-3 rounded-lg p-3"
+        >
+          <div className="flex flex-col gap-0.5">
+            <p className="truncate text-sm font-medium">
+              {generation.text}
+            </p>
+            <div className="flex items-center gap-1.5 text-xs">
+              <VoiceAvatar
+                seed={generation.voiceId ?? generation.voiceName}
+                name={generation.voiceName}
+              />
+              <span>{generation.voiceName}</span>
+              <span>&middot;</span>
+              <span>
+                {formatDistanceToNow(new Date(generation.createdAt), {
+                  addSuffix: true,
+                })}
+              </span>
+            </div>
+          </div>
+        </Link>
+      ))}
+    </div>
+  );
+}
+```
+
+## Empty State
+
+When no generations exist:
+
+```typescript
+if (!generations.length) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center">
+      <div className="relative flex items-center justify-center">
+        <AudioLinesIcon />
+        <AudioWaveformIcon />
+        <ClockIcon />
+      </div>
+      <p className="font-semibold">No generations yet</p>
+      <p className="text-xs text-muted-foreground">
+        Generate some audio and it will appear here
+      </p>
+    </div>
+  );
+}
+```
+
+## Detail View
+
+Access generation details at `/text-to-speech/{id}`:
+
+```typescript
+import { useSuspenseQueries } from '@tanstack/react-query';
+
+function GenerationDetailView({ generationId }: { generationId: string }) {
+  const trpc = useTRPC();
+  const [generationQuery, voicesQuery] = useSuspenseQueries({
+    queries: [
+      trpc.generations.getById.queryOptions({ id: generationId }),
+      trpc.voices.getAll.queryOptions(),
+    ],
+  });
+
+  const generation = generationQuery.data;
+  const { custom: customVoices, system: systemVoices } = voicesQuery.data;
+  const allVoices = [...customVoices, ...systemVoices];
+
+  return (
+    <div>
+      {/* Audio player with WaveSurfer */}
+      <AudioPlayer url={generation.audioUrl} />
+      
+      {/* Original text */}
+      <TextDisplay text={generation.text} />
+      
+      {/* Voice info */}
+      <VoiceInfo name={generation.voiceName} />
+      
+      {/* Parameters */}
+      <ParametersDisplay
+        temperature={generation.temperature}
+        topP={generation.topP}
+        topK={generation.topK}
+        repetitionPenalty={generation.repetitionPenalty}
+      />
+    </div>
+  );
+}
+```
+
+## Regenerate from History
+
+History items can be used as templates for new generations:
+
+<Steps>
+  <Step title="Load generation">
+    Navigate to `/text-to-speech/{id}` to view a past generation.
+  </Step>
+  
+  <Step title="Pre-filled form">
+    The form is automatically populated with:
+    - Original text
+    - Original voice (if still available)
+    - Original parameters
+  </Step>
+  
+  <Step title="Modify as needed">
+    - Edit the text
+    - Change the voice
+    - Adjust parameters
+  </Step>
+  
+  <Step title="Generate new audio">
+    Click "Generate" to create a new generation with modified settings.
+  </Step>
+</Steps>
+
+### Voice Handling
+
+<Warning>
+  If the original voice was deleted, the system falls back to the first available voice in the library.
+</Warning>
+
+```typescript
+// Voice fallback logic
+const allVoices = [...customVoices, ...systemVoices];
+const fallbackVoiceId = allVoices[0]?.id ?? "";
+
+// Use original voice if it still exists
+const resolvedVoiceId =
+  data?.voiceId && allVoices.some((v) => v.id === data.voiceId)
+    ? data.voiceId
+    : fallbackVoiceId;
+
+// Always display the original voice name (denormalized)
+const generationVoice = {
+  id: data.voiceId ?? undefined,
+  name: data.voiceName, // Preserved even if voice was deleted
+};
+```
+
+## Voice Name Snapshot
+
+Generations store a denormalized `voiceName` field:
+
+- **Preservation**: Voice name is captured at generation time
+- **Immutable**: Name doesn't change if voice is renamed
+- **History**: Shows voice name even if voice is deleted
+- **Audit trail**: Complete record of what voice was used
+
+```typescript
+// When creating a generation
+const generation = await prisma.generation.create({
+  data: {
+    text: input.text,
+    voiceId: voice.id,
+    voiceName: voice.name, // Snapshot the name
+    // ... other fields
+  },
+});
+```
+
+## Audio Access
+
+Generation audio is served through a dedicated API route:
+
+### Audio URL Format
+
+```
+/api/audio/{generationId}
+```
+
+### Security
+
+- Organization-scoped access
+- Authenticated requests only
+- Fetches from R2 storage
+
+```typescript
+// Audio is stored at:
+const r2Key = `generations/orgs/{orgId}/{generationId}`;
+```
+
+## Sorting and Display
+
+### Default Sorting
+
+Generations are returned sorted by creation date:
+
+```typescript
+const generations = await prisma.generation.findMany({
+  where: { orgId: ctx.orgId },
+  orderBy: { createdAt: "desc" }, // Newest first
+  omit: {
+    orgId: true,        // Don't expose
+    r2ObjectKey: true,  // Internal only
+  },
+});
+```
+
+### Time Display
+
+Use relative time formatting:
+
+```typescript
+import { formatDistanceToNow } from 'date-fns';
+
+const timeAgo = formatDistanceToNow(new Date(generation.createdAt), {
+  addSuffix: true, // "2 hours ago"
+});
+```
+
+## Complete Example
+
+```typescript
+import { trpc } from '@/trpc/client';
+import { useSuspenseQuery } from '@tanstack/react-query';
+import { formatDistanceToNow } from 'date-fns';
+import Link from 'next/link';
+
+export function GenerationHistoryList() {
+  const trpc = useTRPC();
+  const { data: generations } = useSuspenseQuery(
+    trpc.generations.getAll.queryOptions()
+  );
+
+  return (
+    <div className="space-y-2">
+      <h2 className="text-lg font-semibold">Recent Generations</h2>
+      
+      {generations.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <ul className="divide-y">
+          {generations.map((gen) => (
+            <li key={gen.id}>
+              <Link
+                href={`/text-to-speech/${gen.id}`}
+                className="block p-4 hover:bg-muted"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{gen.text}</p>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <VoiceAvatar
+                        seed={gen.voiceId ?? gen.voiceName}
+                        name={gen.voiceName}
+                      />
+                      <span>{gen.voiceName}</span>
+                    </div>
+                  </div>
+                  <time className="text-sm text-muted-foreground">
+                    {formatDistanceToNow(new Date(gen.createdAt), {
+                      addSuffix: true,
+                    })}
+                  </time>
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+```
+
+## Performance Considerations
+
+<Note>
+  History queries are organization-scoped and indexed on `orgId` for fast retrieval. Audio files are lazy-loaded only when played.
+</Note>
+
+### Database Indexes
+
+```prisma
+model Generation {
+  // ...
+  @@index([orgId])    // Fast org-scoped queries
+  @@index([voiceId])  // Fast voice lookups
+}
+```
+
+### Audio Streaming
+
+Audio is not embedded in API responses:
+
+```typescript
+// Response includes URL, not audio data
+{
+  id: "clx123",
+  audioUrl: "/api/audio/clx123", // Stream from separate endpoint
+  text: "...",
+  // ...
+}
+```
+
+This keeps API responses lightweight and allows browser-native audio streaming.

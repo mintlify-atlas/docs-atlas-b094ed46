@@ -1,0 +1,400 @@
+---
+title: 'Generation Parameters'
+description: 'Understanding and tuning TTS generation parameters'
+---
+
+## Overview
+
+Chatterbox TTS provides four key parameters for controlling speech generation quality, consistency, and expressiveness. Understanding these parameters helps you achieve optimal results for different use cases.
+
+## Parameters Reference
+
+### Temperature
+
+Controls the randomness and creativity of the generation.
+
+<ParamField path="temperature" type="number" default="0.8">
+  **Range**: 0.0 to 2.0
+  
+  **Effect**:
+  - **0.0 - 0.5**: More consistent and predictable output. Use for formal content like news, announcements, or technical documentation.
+  - **0.6 - 1.0**: Balanced naturalness with some variation. Ideal for most conversational content.
+  - **1.0 - 2.0**: More expressive and varied output. Good for storytelling, character voices, or creative content.
+</ParamField>
+
+<CodeGroup>
+```typescript Conservative (0.3)
+const result = await trpc.generations.create.mutate({
+  text: "The stock market opened at 9:30 AM Eastern Time.",
+  voiceId: "narrator-voice",
+  temperature: 0.3, // Consistent, professional tone
+  topP: 0.95,
+  topK: 1000,
+  repetitionPenalty: 1.2,
+});
+```
+
+```typescript Balanced (0.8)
+const result = await trpc.generations.create.mutate({
+  text: "Hey there! Welcome back to the podcast.",
+  voiceId: "host-voice",
+  temperature: 0.8, // Natural conversation
+  topP: 0.95,
+  topK: 1000,
+  repetitionPenalty: 1.2,
+});
+```
+
+```typescript Expressive (1.5)
+const result = await trpc.generations.create.mutate({
+  text: "And then [gasp], the dragon appeared!",
+  voiceId: "storyteller-voice",
+  temperature: 1.5, // Dramatic, varied delivery
+  topP: 0.95,
+  topK: 1000,
+  repetitionPenalty: 1.2,
+});
+```
+</CodeGroup>
+
+---
+
+### Top P (Nucleus Sampling)
+
+Controls diversity by considering only the top probability mass.
+
+<ParamField path="topP" type="number" default="0.95">
+  **Range**: 0.0 to 1.0
+  
+  **Effect**:
+  - **0.5 - 0.7**: Very focused sampling. Consistent but may sound repetitive.
+  - **0.8 - 0.95**: Balanced diversity. Good for most use cases.
+  - **0.95 - 1.0**: Maximum diversity. More natural but less predictable.
+  
+  **Technical**: Samples from the smallest set of tokens whose cumulative probability exceeds `topP`.
+</ParamField>
+
+#### How It Works
+
+Nucleus sampling dynamically adjusts the token pool based on probability distribution:
+
+```
+Token probabilities:
+  "hello": 0.40
+  "hi":    0.30
+  "hey":   0.20
+  "yo":    0.05
+  "sup":   0.05
+
+With topP=0.90:
+  ✓ "hello" (0.40, cumulative: 0.40)
+  ✓ "hi"    (0.30, cumulative: 0.70)
+  ✓ "hey"   (0.20, cumulative: 0.90)
+  ✗ "yo"    (would exceed 0.90)
+  ✗ "sup"   (excluded)
+```
+
+---
+
+### Top K
+
+Limits the sampling pool to the K most likely tokens.
+
+<ParamField path="topK" type="number" default="1000">
+  **Range**: 1 to 10,000
+  
+  **Effect**:
+  - **1 - 50**: Very restricted vocabulary. Extremely consistent but unnatural.
+  - **100 - 500**: Moderate restriction. Good for technical or formal content.
+  - **500 - 2000**: Standard range. Balances naturalness and control.
+  - **2000+**: Minimal restriction. Maximum vocabulary diversity.
+  
+  **Technical**: Only the K most probable tokens are considered for sampling, regardless of their probability values.
+</ParamField>
+
+#### Top-K vs Top-P
+
+<Accordion title="When to use Top-K vs Top-P">
+  **Use Top-K when**:
+  - You want a fixed vocabulary size regardless of confidence
+  - You need very predictable output (low K values)
+  - You're generating technical or domain-specific content
+  
+  **Use Top-P when**:
+  - You want adaptive sampling based on model confidence
+  - You prefer natural-sounding variation
+  - You're generating conversational or narrative content
+  
+  **Use both** (recommended):
+  - Top-P provides adaptive diversity
+  - Top-K sets a hard upper limit on vocabulary
+  - This combination works well for most use cases
+</Accordion>
+
+---
+
+### Repetition Penalty
+
+Penalizes tokens that have already been generated.
+
+<ParamField path="repetitionPenalty" type="number" default="1.2">
+  **Range**: 1.0 to 2.0
+  
+  **Effect**:
+  - **1.0**: No penalty. May lead to repetitive phrases or words.
+  - **1.1 - 1.3**: Subtle penalty. Reduces repetition while maintaining naturalness.
+  - **1.4 - 2.0**: Strong penalty. Actively avoids repetition, may sound forced.
+  
+  **Technical**: Divides the logits of previously generated tokens by this value, making them less likely to be selected again.
+</ParamField>
+
+#### Example Impact
+
+<CodeGroup>
+```text No Penalty (1.0)
+"The cat sat on the mat. The cat was happy. The cat purred."
+# Notice: "The cat" repeats frequently
+```
+
+```text Balanced Penalty (1.2)
+"The cat sat on the mat. She was happy and purred softly."
+# Notice: More varied sentence structure
+```
+
+```text Strong Penalty (1.8)
+"A feline rested upon the rug. This animal exhibited contentment through purring."
+# Notice: Actively avoids repetition, may feel unnatural
+```
+</CodeGroup>
+
+---
+
+## Use Case Presets
+
+### News & Announcements
+
+```typescript
+const newsPreset = {
+  temperature: 0.3,
+  topP: 0.85,
+  topK: 500,
+  repetitionPenalty: 1.15,
+};
+```
+
+**Optimized for**: Consistency, clarity, professional tone
+
+---
+
+### Conversational Content
+
+```typescript
+const conversationalPreset = {
+  temperature: 0.8,
+  topP: 0.95,
+  topK: 1000,
+  repetitionPenalty: 1.2,
+};
+```
+
+**Optimized for**: Natural flow, variety, engagement
+
+---
+
+### Storytelling & Characters
+
+```typescript
+const storytellingPreset = {
+  temperature: 1.2,
+  topP: 0.95,
+  topK: 1500,
+  repetitionPenalty: 1.3,
+};
+```
+
+**Optimized for**: Expressiveness, emotion, dramatic delivery
+
+---
+
+### Technical Documentation
+
+```typescript
+const technicalPreset = {
+  temperature: 0.4,
+  topP: 0.90,
+  topK: 600,
+  repetitionPenalty: 1.1,
+};
+```
+
+**Optimized for**: Precision, consistency, minimal variation
+
+---
+
+## Parameter Interactions
+
+### Temperature + Top-P
+
+<Tabs>
+  <Tab title="Low Temp + Low Top-P">
+    **Config**: `temperature: 0.3, topP: 0.7`
+    
+    **Result**: Very consistent, conservative output. Good for formal content but may sound robotic.
+  </Tab>
+  
+  <Tab title="High Temp + High Top-P">
+    **Config**: `temperature: 1.5, topP: 0.98`
+    
+    **Result**: Maximum expressiveness and variety. Great for creative content but less predictable.
+  </Tab>
+  
+  <Tab title="Low Temp + High Top-P">
+    **Config**: `temperature: 0.4, topP: 0.95`
+    
+    **Result**: Consistent with occasional variation. Balanced for professional conversational content.
+  </Tab>
+  
+  <Tab title="High Temp + Low Top-P">
+    **Config**: `temperature: 1.3, topP: 0.75`
+    
+    **Result**: Expressive within a constrained vocabulary. Useful for character voices with specific speech patterns.
+  </Tab>
+</Tabs>
+
+---
+
+## Tuning Workflow
+
+<Steps>
+  <Step title="Start with Defaults">
+    Begin with the default values:
+    - `temperature: 0.8`
+    - `topP: 0.95`
+    - `topK: 1000`
+    - `repetitionPenalty: 1.2`
+  </Step>
+  
+  <Step title="Adjust Temperature">
+    If output is too monotone → increase temperature
+    
+    If output is too random → decrease temperature
+  </Step>
+  
+  <Step title="Fine-tune Repetition">
+    If you notice repeated phrases → increase repetitionPenalty
+    
+    If speech feels forced → decrease repetitionPenalty
+  </Step>
+  
+  <Step title="Tweak Sampling (Advanced)">
+    For more control over diversity, adjust topP and topK:
+    - Decrease both for more consistency
+    - Increase both for more variety
+  </Step>
+</Steps>
+
+---
+
+## Common Issues
+
+### Robotic or Monotone Output
+
+**Symptoms**: Speech sounds flat, lacks emotion or variation
+
+**Solutions**:
+- Increase `temperature` to 1.0-1.3
+- Increase `topP` to 0.95-0.98
+- Check voice quality (some voices are more expressive than others)
+
+---
+
+### Repetitive Phrases
+
+**Symptoms**: Same words or patterns repeat frequently
+
+**Solutions**:
+- Increase `repetitionPenalty` to 1.3-1.5
+- Increase `topK` to allow more vocabulary diversity
+- Break long text into shorter segments
+
+---
+
+### Inconsistent Delivery
+
+**Symptoms**: Tone varies unpredictably between sentences
+
+**Solutions**:
+- Decrease `temperature` to 0.5-0.7
+- Decrease `topP` to 0.85-0.90
+- Use consistent punctuation and formatting
+
+---
+
+### Unnatural Phrasing
+
+**Symptoms**: Speech sounds forced or overly formal
+
+**Solutions**:
+- Decrease `repetitionPenalty` to 1.0-1.1
+- Increase `temperature` slightly (0.1-0.2 increments)
+- Ensure input text is naturally written
+
+---
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Make Small Adjustments">
+    Change one parameter at a time by small increments (0.1-0.2) to understand its individual effect.
+  </Accordion>
+  
+  <Accordion title="Test with Representative Content">
+    Use actual content samples from your use case, not generic test phrases.
+  </Accordion>
+  
+  <Accordion title="Consider Voice Characteristics">
+    Different voices respond differently to parameters. What works for a narrator may not work for a character voice.
+  </Accordion>
+  
+  <Accordion title="Document Your Presets">
+    Save successful parameter combinations for different content types in your application.
+  </Accordion>
+  
+  <Accordion title="Balance Consistency and Quality">
+    Perfect consistency isn't always desirable. Some variation makes speech sound more human.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Technical Details
+
+### Sampling Algorithm
+
+Chatterbox uses a combined sampling approach:
+
+1. **Temperature scaling**: Divides logits by temperature before softmax
+2. **Top-K filtering**: Removes all but the K most probable tokens
+3. **Top-P filtering**: Further filters to nucleus based on cumulative probability
+4. **Repetition penalty**: Divides logits of previously generated tokens
+5. **Sampling**: Randomly selects from the filtered distribution
+
+```python
+# Simplified pseudocode
+logits = model.forward(input)
+logits = logits / temperature
+logits = apply_repetition_penalty(logits, previous_tokens, repetition_penalty)
+logits = top_k_filtering(logits, top_k)
+logits = top_p_filtering(logits, top_p)
+probs = softmax(logits)
+token = sample(probs)
+```
+
+### Performance Impact
+
+Parameter changes have minimal performance impact:
+- **Temperature**: Negligible (simple division)
+- **Top-P/Top-K**: ~1-2ms overhead for filtering
+- **Repetition Penalty**: ~1ms per token for lookup
+
+Total parameter processing adds less than 5ms to generation time.

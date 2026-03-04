@@ -1,0 +1,261 @@
+---
+title: 'Deployment Overview'
+description: 'Prerequisites and planning guide for deploying Resonance'
+---
+
+## Overview
+
+Resonance is a full-stack Next.js application that requires several cloud services to operate. This guide covers the prerequisites and architecture considerations for deploying to production.
+
+## Architecture
+
+Resonance consists of three main components:
+
+<CardGroup cols={3}>
+  <Card title="Next.js App" icon="server">
+    The web application (SSR + API routes)
+  </Card>
+  <Card title="PostgreSQL Database" icon="database">
+    Stores voices, generations, and metadata
+  </Card>
+  <Card title="Modal GPU Inference" icon="microchip">
+    Serverless TTS engine with voice cloning
+  </Card>
+</CardGroup>
+
+## Prerequisites
+
+### Required Services
+
+Before deploying, you'll need accounts and configuration for:
+
+<Steps>
+  <Step title="Node.js Runtime">
+    **Node.js 20.9 or later** is required. The application uses Next.js 16 with React 19 and server components.
+  </Step>
+
+  <Step title="PostgreSQL Database">
+    A managed PostgreSQL database with the connection string ready.
+    
+    **Recommended:** [Prisma Postgres](https://cwa.run/prisma) for built-in connection pooling.
+    
+    **Alternatives:** Any managed Postgres provider (Railway, Supabase, Neon, etc.)
+  </Step>
+
+  <Step title="Cloudflare R2">
+    S3-compatible object storage for audio files.
+    
+    **Required credentials:**
+    - Account ID
+    - Access Key ID
+    - Secret Access Key
+    - Bucket name
+    
+    <Note>
+      R2 offers 10GB free storage and zero egress fees, making it ideal for audio hosting.
+    </Note>
+  </Step>
+
+  <Step title="Modal Account">
+    Serverless GPU platform for the TTS inference engine.
+    
+    **What you need:**
+    - Modal CLI installed (`pip install modal`)
+    - Modal account with billing enabled
+    - Three secrets configured (see [Self-Hosting](/deployment/self-hosting#modal-setup))
+    
+    <Warning>
+      Modal charges per GPU-second. The A10G GPU costs ~$0.0008/second. Budget accordingly.
+    </Warning>
+  </Step>
+
+  <Step title="Clerk Authentication">
+    User authentication with Organizations support.
+    
+    **Configuration:**
+    - Enable Organizations in your Clerk dashboard
+    - Set up sign-in/sign-up pages
+    - Configure allowed authentication methods
+    - Copy API keys to environment variables
+  </Step>
+
+  <Step title="Polar Billing (Optional)">
+    Usage-based billing and metering.
+    
+    **Required for production:**
+    - Polar account with API token
+    - Product ID for pay-as-you-go pricing
+    - Webhook endpoint configured
+    
+    <Note>
+      Use `POLAR_SERVER="sandbox"` for testing with card `4242 4242 4242 4242`.
+    </Note>
+  </Step>
+</Steps>
+
+### Environment Variables
+
+The application validates environment variables using `@t3-oss/env-nextjs`. All required variables must be present at build time.
+
+<CodeGroup>
+```bash Production
+# Database
+DATABASE_URL="postgresql://..."
+
+# Chatterbox TTS (Modal)
+CHATTERBOX_API_URL="https://your-modal-endpoint.modal.run"
+CHATTERBOX_API_KEY="your-api-key"
+
+# Clerk Authentication
+CLERK_SECRET_KEY="sk_..."
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_..."
+NEXT_PUBLIC_CLERK_SIGN_IN_URL="/sign-in"
+NEXT_PUBLIC_CLERK_SIGN_UP_URL="/sign-up"
+
+# Cloudflare R2
+R2_ACCOUNT_ID="your-account-id"
+R2_ACCESS_KEY_ID="your-access-key"
+R2_SECRET_ACCESS_KEY="your-secret-key"
+R2_BUCKET_NAME="your-bucket-name"
+
+# Polar Billing
+POLAR_ACCESS_TOKEN="your-polar-token"
+POLAR_SERVER="production"
+POLAR_PRODUCT_ID="your-product-id"
+
+# Application
+APP_URL="https://yourdomain.com"
+```
+
+```bash Development
+# Database (local or cloud)
+DATABASE_URL="postgresql://localhost:5432/resonance"
+
+# Modal (use deployed endpoint)
+CHATTERBOX_API_URL="https://your-dev-modal.modal.run"
+CHATTERBOX_API_KEY="dev-api-key"
+
+# Clerk (development keys)
+CLERK_SECRET_KEY="sk_test_..."
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
+NEXT_PUBLIC_CLERK_SIGN_IN_URL="/sign-in"
+NEXT_PUBLIC_CLERK_SIGN_UP_URL="/sign-up"
+
+# R2 (shared or dev bucket)
+R2_ACCOUNT_ID="your-account-id"
+R2_ACCESS_KEY_ID="dev-access-key"
+R2_SECRET_ACCESS_KEY="dev-secret-key"
+R2_BUCKET_NAME="resonance-dev"
+
+# Polar (sandbox mode)
+POLAR_ACCESS_TOKEN="sandbox-token"
+POLAR_SERVER="sandbox"
+POLAR_PRODUCT_ID="test-product-id"
+
+# Local URL
+APP_URL="http://localhost:3000"
+```
+</CodeGroup>
+
+<Warning>
+  Missing or invalid environment variables will cause the build to fail. The validation schema is defined in `src/lib/env.ts:5-20`.
+</Warning>
+
+## Build Requirements
+
+### Build Process
+
+The application uses Next.js production build with these characteristics:
+
+<Accordion title="Build Steps">
+  1. **Dependency installation** - `npm install` runs `postinstall` script which generates Prisma client
+  2. **Environment validation** - All required env vars are validated at build time
+  3. **Next.js build** - Creates optimized production bundle with SSR
+  4. **Sentry integration** - Uploads source maps if `CI` env var is set
+  
+  ```bash
+  npm install
+  npm run build
+  ```
+</Accordion>
+
+<Accordion title="Build Configuration">
+  The `next.config.ts` includes:
+  
+  - **Sentry integration** for error monitoring
+  - **Proxy max body size** set to 20MB for audio uploads
+  - **Disabled dev indicators** for cleaner production UI
+  - **Source map uploads** (silent unless in CI)
+  - **Automatic Vercel Cron Monitors** support
+</Accordion>
+
+### Database Migrations
+
+Prisma migrations must be applied before the application starts.
+
+```bash
+# Deploy pending migrations
+npx prisma migrate deploy
+
+# Seed system voices (first deployment only)
+npx prisma db seed
+```
+
+<Note>
+  The seed script uploads 20 system voice WAV files to R2 and creates database entries. This only needs to run once per environment.
+</Note>
+
+## Deployment Checklist
+
+<Steps>
+  <Step title="Service Setup">
+    - [ ] PostgreSQL database provisioned
+    - [ ] Cloudflare R2 bucket created
+    - [ ] Clerk application configured
+    - [ ] Modal secrets created
+    - [ ] Polar product configured (if using billing)
+  </Step>
+
+  <Step title="Deploy Modal TTS">
+    - [ ] Update `chatterbox_tts.py` with R2 credentials
+    - [ ] Run `modal deploy chatterbox_tts.py`
+    - [ ] Test endpoint with curl
+    - [ ] Copy endpoint URL to `CHATTERBOX_API_URL`
+  </Step>
+
+  <Step title="Configure Environment">
+    - [ ] All required env vars set on hosting platform
+    - [ ] Production URLs configured
+    - [ ] Secrets properly secured (not committed)
+  </Step>
+
+  <Step title="Database Setup">
+    - [ ] Run `npx prisma migrate deploy`
+    - [ ] Run `npx prisma db seed`
+    - [ ] Verify 20 system voices created
+  </Step>
+
+  <Step title="Deploy Application">
+    - [ ] Push code to hosting platform
+    - [ ] Build succeeds with no errors
+    - [ ] Application starts and responds to health checks
+  </Step>
+
+  <Step title="Post-Deployment">
+    - [ ] Test authentication flow
+    - [ ] Generate sample TTS
+    - [ ] Verify audio playback
+    - [ ] Check error monitoring (Sentry)
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Self-Hosting Guide" icon="rocket" href="/deployment/self-hosting">
+    Step-by-step deployment instructions for Railway and Docker
+  </Card>
+  <Card title="Troubleshooting" icon="wrench" href="/deployment/troubleshooting">
+    Common issues and solutions for Modal cold starts, R2, and more
+  </Card>
+</CardGroup>

@@ -1,0 +1,175 @@
+---
+title: 'Authentication'
+description: 'Clerk-based authentication for tRPC procedures'
+---
+
+## Overview
+
+Resonance uses [Clerk](https://clerk.com) for authentication and provides two procedure types for protected API access:
+
+1. **authProcedure** - Requires authenticated user (userId only)
+2. **orgProcedure** - Requires organization context (userId + orgId)
+
+## Procedure Types
+
+### Base Procedure
+
+Unprotected procedure available to all requests.
+
+```typescript src/trpc/init.ts
+export const baseProcedure = t.procedure.use(sentryMiddleware);
+```
+
+### Auth Procedure
+
+Requires a valid user session. Throws `UNAUTHORIZED` if user is not signed in.
+
+```typescript src/trpc/init.ts
+export const authProcedure = baseProcedure.use(async ({ next }) => {
+  const { userId } = await auth();
+
+  if (!userId) {
+    throw new TRPCError({ code: "UNAUTHORIZED" });
+  }
+
+  return next({
+    ctx: { userId },
+  });
+});
+```
+
+<ParamField path="ctx.userId" type="string" required>
+  Clerk user ID available in the procedure context
+</ParamField>
+
+### Org Procedure
+
+Requires both user authentication and organization membership. This is used for all voice and generation operations.
+
+```typescript src/trpc/init.ts
+export const orgProcedure = baseProcedure.use(async ({ next }) => {
+  const { userId, orgId } = await auth();
+
+  if (!userId) {
+    throw new TRPCError({ code: "UNAUTHORIZED" });
+  }
+
+  if (!orgId) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Organization required",
+    });
+  }
+
+  return next({ ctx: { userId, orgId } });
+});
+```
+
+<ParamField path="ctx.userId" type="string" required>
+  Clerk user ID
+</ParamField>
+
+<ParamField path="ctx.orgId" type="string" required>
+  Clerk organization ID (required for voice and generation operations)
+</ParamField>
+
+## Authentication Flow
+
+<Steps>
+  <Step title="User Signs In">
+    User authenticates via Clerk's sign-in flow
+  </Step>
+  <Step title="Session Created">
+    Clerk creates a session with userId and optional orgId
+  </Step>
+  <Step title="Middleware Validation">
+    Each tRPC procedure validates the session:
+    - `authProcedure` checks for userId
+    - `orgProcedure` checks for both userId and orgId
+  </Step>
+  <Step title="Context Available">
+    Authentication data becomes available in `ctx` for use in the procedure
+  </Step>
+</Steps>
+
+## Error Responses
+
+### UNAUTHORIZED (401)
+
+Thrown when no valid user session exists.
+
+```json
+{
+  "error": {
+    "code": "UNAUTHORIZED",
+    "message": "UNAUTHORIZED"
+  }
+}
+```
+
+### FORBIDDEN (403)
+
+Thrown when user is authenticated but lacks organization context.
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Organization required"
+  }
+}
+```
+
+## Usage in Routers
+
+All Resonance API routers use `orgProcedure` to ensure organization-scoped access:
+
+<CodeGroup>
+```typescript Voices Router
+export const voicesRouter = createTRPCRouter({
+  getAll: orgProcedure
+    .input(/* ... */)
+    .query(async ({ ctx, input }) => {
+      // ctx.userId and ctx.orgId available here
+      const voices = await prisma.voice.findMany({
+        where: { orgId: ctx.orgId }
+      });
+      return voices;
+    }),
+});
+```
+
+```typescript Generations Router
+export const generationsRouter = createTRPCRouter({
+  create: orgProcedure
+    .input(/* ... */)
+    .mutation(async ({ ctx, input }) => {
+      // Organization-scoped generation
+      const generation = await prisma.generation.create({
+        data: {
+          orgId: ctx.orgId,
+          // ...
+        }
+      });
+      return generation;
+    }),
+});
+```
+</CodeGroup>
+
+## Monitoring
+
+All procedures include Sentry middleware for error tracking and performance monitoring:
+
+```typescript
+const sentryMiddleware = t.middleware(
+  Sentry.trpcMiddleware({
+    attachRpcInput: true,
+  }),
+);
+```
+
+This automatically captures:
+- RPC input parameters
+- Error stack traces
+- Request timing information

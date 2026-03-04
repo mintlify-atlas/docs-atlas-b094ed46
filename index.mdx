@@ -1,97 +1,314 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: Resonance Documentation
+description: Open-source AI-powered text-to-speech and voice cloning platform
+mode: custom
 ---
 
-## Setting up
+<div className="relative overflow-hidden bg-gradient-to-br from-[#6366f1] via-[#818cf8] to-[#4f46e5] dark:from-[#4f46e5] dark:via-[#6366f1] dark:to-[#818cf8] py-20">
+  <div className="absolute inset-0 bg-black/10 dark:bg-black/20"></div>
+  <div className="relative max-w-6xl mx-auto px-6 lg:px-8">
+    <div className="grid lg:grid-cols-12 gap-12 items-center">
+      <div className="lg:col-span-7">
+        <h1 className="text-5xl lg:text-6xl font-bold text-white mb-6">
+          Welcome to Resonance
+        </h1>
+        <p className="text-xl text-white/90 max-w-2xl mb-8">
+          The open-source alternative to ElevenLabs. Generate natural-sounding speech and clone voices instantly with AI-powered text-to-speech built on Next.js 16 and Chatterbox TTS.
+        </p>
+        <div className="flex flex-wrap gap-4">
+          <a 
+            href="/quickstart" 
+            className="inline-flex items-center px-6 py-3 bg-white text-[#6366f1] font-semibold rounded-lg hover:bg-gray-100 transition-colors no-underline"
+          >
+            Get Started
+            <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </a>
+          <a 
+            href="/api/introduction" 
+            className="inline-flex items-center px-6 py-3 border-2 border-white/30 bg-white/10 text-white font-semibold rounded-lg hover:bg-white/20 transition-colors no-underline"
+          >
+            API Reference
+          </a>
+        </div>
+      </div>
+      <div className="hidden lg:block lg:col-span-5">
+        <div className="relative">
+          <div className="absolute inset-0 bg-white/10 rounded-2xl blur-3xl"></div>
+          <div className="relative bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 p-8">
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                  </svg>
+                </div>
+                <div>
+                  <div className="text-white font-semibold">Text-to-Speech</div>
+                  <div className="text-white/70 text-sm">Natural AI voices</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                  </svg>
+                </div>
+                <div>
+                  <div className="text-white font-semibold">Voice Cloning</div>
+                  <div className="text-white/70 text-sm">10s sample, instant clone</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                  </svg>
+                </div>
+                <div>
+                  <div className="text-white font-semibold">20 Built-in Voices</div>
+                  <div className="text-white/70 text-sm">12 categories, 5 locales</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
-Get your documentation site up and running in minutes.
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="mb-12">
+    <h2 className="text-3xl font-semibold text-gray-900 dark:text-white mb-3">
+      Quick start
+    </h2>
+    <p className="text-base text-gray-600 dark:text-gray-400">
+      Get Resonance running locally in minutes
+    </p>
+  </div>
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+  <Steps>
+    <Step title="Clone and install dependencies">
+      Clone the repository and install all required packages:
 
-## Make it yours
+      ```bash
+      git clone https://github.com/code-with-antonio/resonance.git
+      cd resonance
+      npm install
+      ```
+    </Step>
 
-Design a docs site that looks great and empowers your users.
+    <Step title="Configure environment variables">
+      Copy the example environment file and add your credentials:
 
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
-  </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
-  </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
-  </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
+      ```bash
+      cp .env.example .env.local
+      ```
 
-## Create beautiful pages
+      <Accordion title="Required environment variables">
+        ```env
+        # Database (Prisma Postgres)
+        DATABASE_URL="postgresql://..."
 
-Everything you need to create world-class documentation.
+        # Chatterbox TTS (Modal)
+        CHATTERBOX_API_URL="https://your-modal-endpoint.modal.run"
+        CHATTERBOX_API_KEY="your-api-key"
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+        # Clerk Authentication
+        CLERK_SECRET_KEY="sk_..."
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_..."
 
-## Need inspiration?
+        # Cloudflare R2
+        R2_ACCOUNT_ID="your-account-id"
+        R2_ACCESS_KEY_ID="your-access-key"
+        R2_SECRET_ACCESS_KEY="your-secret-key"
+        R2_BUCKET_NAME="your-bucket-name"
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+        # Polar Billing
+        POLAR_ACCESS_TOKEN="your-polar-token"
+        POLAR_SERVER="sandbox"
+        POLAR_PRODUCT_ID="your-product-id"
+        ```
+      </Accordion>
+    </Step>
+
+    <Step title="Set up the database and deploy TTS engine">
+      Run migrations and deploy the Chatterbox TTS model to Modal:
+
+      ```bash
+      npx prisma migrate deploy
+      modal deploy chatterbox_tts.py
+      ```
+
+      <Note>
+        The Modal deployment runs on a serverless NVIDIA A10G GPU. First requests after inactivity may experience cold starts.
+      </Note>
+    </Step>
+
+    <Step title="Seed voices and start the app">
+      Populate the database with 20 built-in voices and start the development server:
+
+      ```bash
+      npx prisma db seed
+      npm run dev
+      ```
+
+      Open [http://localhost:3000](http://localhost:3000) to see Resonance in action.
+    </Step>
+  </Steps>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="mb-12">
+    <h2 className="text-3xl font-semibold text-gray-900 dark:text-white mb-3">
+      Core features
+    </h2>
+    <p className="text-base text-gray-600 dark:text-gray-400">
+      Everything you need for production-ready text-to-speech
+    </p>
+  </div>
+
+  <CardGroup cols={2}>
+    <Card 
+      title="Text-to-Speech" 
+      icon="waveform-lines" 
+      href="/features/text-to-speech"
+    >
+      Generate speech from text with adjustable creativity, variety, expression, and flow parameters
+    </Card>
+    <Card 
+      title="Voice Cloning" 
+      icon="microphone" 
+      href="/features/voice-cloning"
+    >
+      Upload or record a 10-second sample and clone any voice instantly with zero-shot learning
+    </Card>
+    <Card 
+      title="Voice Library" 
+      icon="books" 
+      href="/features/voice-library"
+    >
+      Browse 20 pre-seeded system voices and manage your custom cloned voices
+    </Card>
+    <Card 
+      title="Generation History" 
+      icon="clock-rotate-left" 
+      href="/features/generation-history"
+    >
+      Access past generations with preserved voice metadata and waveform visualization
+    </Card>
+    <Card 
+      title="Multi-Tenant" 
+      icon="users" 
+      href="/guides/managing-organizations"
+    >
+      Team-based access via Clerk Organizations with complete data isolation
+    </Card>
+    <Card 
+      title="Usage Billing" 
+      icon="credit-card" 
+      href="/guides/usage-billing"
+    >
+      Pay-as-you-go character metering with configurable pricing via Polar
+    </Card>
+  </CardGroup>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="mb-12">
+    <h2 className="text-3xl font-semibold text-gray-900 dark:text-white mb-3">
+      Explore by topic
+    </h2>
+    <p className="text-base text-gray-600 dark:text-gray-400">
+      Deep dive into specific areas
+    </p>
+  </div>
+
+  <div className="grid md:grid-cols-3 gap-6">
+    <a 
+      href="/configuration/environment-variables" 
+      className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] hover:border-[#6366f1] dark:hover:border-[#6366f1] overflow-hidden transition-colors no-underline"
+    >
+      <div className="h-32 bg-gradient-to-br from-[#6366f1]/10 to-[#818cf8]/10 dark:from-[#6366f1]/20 dark:to-[#818cf8]/20 flex items-center justify-center">
+        <svg className="w-12 h-12 text-[#6366f1]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      </div>
+      <div className="p-6 bg-white dark:bg-[#1a1d27]">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-2">Configuration</h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">Set up environment variables, database, storage, and authentication</p>
+        <div className="flex items-center text-sm font-medium text-[#6366f1] group-hover:text-[#4f46e5]">
+          Learn more
+          <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
+      </div>
+    </a>
+
+    <a 
+      href="/api/introduction" 
+      className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] hover:border-[#6366f1] dark:hover:border-[#6366f1] overflow-hidden transition-colors no-underline"
+    >
+      <div className="h-32 bg-gradient-to-br from-[#6366f1]/10 to-[#818cf8]/10 dark:from-[#6366f1]/20 dark:to-[#818cf8]/20 flex items-center justify-center">
+        <svg className="w-12 h-12 text-[#6366f1]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+        </svg>
+      </div>
+      <div className="p-6 bg-white dark:bg-[#1a1d27]">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-2">API Reference</h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">Explore tRPC routers and the Chatterbox TTS API endpoints</p>
+        <div className="flex items-center text-sm font-medium text-[#6366f1] group-hover:text-[#4f46e5]">
+          View API docs
+          <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
+      </div>
+    </a>
+
+    <a 
+      href="/deployment/overview" 
+      className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] hover:border-[#6366f1] dark:hover:border-[#6366f1] overflow-hidden transition-colors no-underline"
+    >
+      <div className="h-32 bg-gradient-to-br from-[#6366f1]/10 to-[#818cf8]/10 dark:from-[#6366f1]/20 dark:to-[#818cf8]/20 flex items-center justify-center">
+        <svg className="w-12 h-12 text-[#6366f1]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+        </svg>
+      </div>
+      <div className="p-6 bg-white dark:bg-[#1a1d27]">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-2">Deployment</h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">Self-host Resonance on your infrastructure with Docker or Railway</p>
+        <div className="flex items-center text-sm font-medium text-[#6366f1] group-hover:text-[#4f46e5]">
+          Deploy now
+          <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+
+<div className="mt-20 mb-16 max-w-5xl mx-auto px-6">
+  <div className="bg-gradient-to-br from-[#6366f1] to-[#818cf8] dark:from-[#4f46e5] dark:to-[#6366f1] rounded-2xl p-12 text-center">
+    <h2 className="text-3xl font-bold text-white mb-4">
+      Ready to build with Resonance?
+    </h2>
+    <p className="text-xl text-white/90 mb-8 max-w-2xl mx-auto">
+      Follow the quickstart guide to get up and running in under 10 minutes
+    </p>
+    <a 
+      href="/quickstart" 
+      className="inline-flex items-center px-8 py-4 bg-white text-[#6366f1] font-semibold rounded-lg hover:bg-gray-100 transition-colors no-underline text-lg"
+    >
+      Get Started Now
+      <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+      </svg>
+    </a>
+  </div>
+</div>

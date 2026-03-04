@@ -1,0 +1,316 @@
+---
+title: 'Usage & Billing'
+description: 'Understand pricing, character metering, and subscription management with Polar'
+icon: 'credit-card'
+---
+
+Resonance uses **Polar** for billing and subscription management with a pay-as-you-go pricing model based on character usage.
+
+## Pricing Model
+
+Resonance charges based on the number of characters you convert to speech:
+
+<CardGroup cols={1}>
+  <Card title="Pay as You Go" icon="chart-line">
+    **$0.30 per 1,000 characters**
+    
+    You only pay for what you use. Characters are metered in real-time as you generate audio.
+  </Card>
+</CardGroup>
+
+### What Counts as a Character?
+
+- Every character in your input text, including:
+  - Letters (A-Z, a-z)
+  - Numbers (0-9)
+  - Punctuation (. , ! ? etc.)
+  - Spaces and line breaks
+  - Special characters
+
+<Info>
+  Character count is calculated from the exact text you submit for generation. Empty characters and formatting are included.
+</Info>
+
+### Example Pricing
+
+| Text Length | Characters | Cost |
+|------------|-----------|------|
+| Short paragraph | 250 | $0.075 |
+| Blog post | 2,000 | $0.60 |
+| Article | 5,000 (max) | $1.50 |
+| 10 articles | 50,000 | $15.00 |
+
+## Subscription Setup
+
+<Steps>
+  <Step title="View Subscription Status">
+    In the sidebar footer, you'll see:
+    - **"Pay as you go"** card if you don't have an active subscription
+    - **"Current usage"** card if you have an active subscription
+  </Step>
+
+  <Step title="Start Subscription">
+    Without a subscription, you cannot generate audio. Click **Upgrade** to begin.
+  </Step>
+
+  <Step title="Polar Checkout">
+    You'll be redirected to a secure Polar checkout page where you can:
+    - Review pricing details
+    - Enter payment information
+    - Complete subscription setup
+    - Set up billing details
+  </Step>
+
+  <Step title="Return to Resonance">
+    After successful checkout, you'll be redirected back to Resonance with an active subscription.
+  </Step>
+
+  <Step title="Start Generating">
+    You can now generate audio! Usage will be metered and billed automatically.
+  </Step>
+</Steps>
+
+## Usage Metering
+
+Resonance uses Polar's event-based metering system:
+
+### How Metering Works
+
+1. **Generation Request** - You submit text for speech generation
+2. **Character Count** - System counts characters in your text
+3. **Subscription Check** - Validates you have an active subscription
+4. **Audio Generation** - Creates the audio file
+5. **Usage Event** - Sends metering event to Polar with character count
+6. **Cost Calculation** - Polar calculates cost based on characters
+
+<Note>
+  Metering happens asynchronously and doesn't block your generation. Even if metering fails temporarily, your audio is still generated.
+</Note>
+
+### Viewing Current Usage
+
+The sidebar shows real-time usage estimation:
+
+```
+Current usage
+$2.47
+Estimated this period
+```
+
+This displays:
+- Aggregated usage across all active subscriptions
+- Estimated cost for the current billing period
+- Updates as you generate more audio
+
+### Understanding the Estimate
+
+- Usage is tracked across **all organization members**
+- Costs accumulate throughout your billing period
+- The estimate may have a slight delay (eventual consistency)
+- Final billing is always accurate based on recorded events
+
+## Managing Your Subscription
+
+### Access Customer Portal
+
+<Steps>
+  <Step title="Open Portal">
+    In the sidebar footer, click **Manage Subscription** on the usage card.
+  </Step>
+
+  <Step title="Polar Customer Portal">
+    You'll be redirected to Polar's customer portal in a new tab.
+  </Step>
+
+  <Step title="Portal Features">
+    In the portal, you can:
+    - View current subscription status
+    - See detailed usage breakdown
+    - Update payment methods
+    - View billing history
+    - Download invoices
+    - Manage subscription settings
+    - Cancel subscription
+  </Step>
+</Steps>
+
+### Subscription Status
+
+Your subscription can have several states:
+
+<AccordionGroup>
+  <Accordion title="Active Subscription" icon="circle-check">
+    - You can generate audio freely
+    - Usage is being metered
+    - Sidebar shows current usage and cost estimate
+    - Portal access is available
+  </Accordion>
+  
+  <Accordion title="No Subscription" icon="circle-xmark">
+    - Cannot generate audio
+    - Sidebar shows "Upgrade" button
+    - Existing generations remain accessible
+    - Custom voices are still available (for when you re-subscribe)
+  </Accordion>
+  
+  <Accordion title="Payment Failed" icon="triangle-exclamation">
+    - Polar will attempt to retry payment
+    - You may temporarily lose generation access
+    - Update payment method in customer portal
+    - Contact support if issues persist
+  </Accordion>
+</AccordionGroup>
+
+## Billing Cycle
+
+Polar handles billing on a recurring basis:
+
+1. **Billing Period** - Typically monthly (check your portal for exact dates)
+2. **Usage Accumulation** - Characters metered throughout the period
+3. **Invoice Generation** - Polar creates an invoice at period end
+4. **Payment Processing** - Automatic charge to your payment method
+5. **New Period** - Usage resets and new period begins
+
+<Tip>
+  You can view your exact billing cycle dates and next invoice date in the Polar customer portal.
+</Tip>
+
+## Organization-Level Billing
+
+Important details about how billing works with organizations:
+
+- **One subscription per organization** - Not per user
+- **Shared usage pool** - All members contribute to the same usage total
+- **Organization admin manages billing** - Only admins can access checkout and portal
+- **External customer ID** - Polar uses your organization ID to track usage
+
+<Warning>
+  If multiple organization members generate audio simultaneously, all usage counts toward the same organization subscription and bill.
+</Warning>
+
+## Cost Optimization Tips
+
+<CardGroup cols={2}>
+  <Card title="Batch Your Content" icon="layer-group">
+    Generate multiple related pieces in one session to streamline workflow and estimate costs accurately.
+  </Card>
+  
+  <Card title="Optimize Text Length" icon="scissors">
+    Remove unnecessary whitespace, repeated content, or markup before generating to reduce character count.
+  </Card>
+  
+  <Card title="Reuse Generations" icon="rotate">
+    Check generation history before creating new audio - you may have already generated similar content.
+  </Card>
+  
+  <Card title="Monitor Usage" icon="chart-line">
+    Regularly check the usage estimate in your sidebar to stay aware of costs throughout the billing period.
+  </Card>
+</CardGroup>
+
+## Technical Implementation
+
+For developers interested in how billing works:
+
+### Subscription Check
+
+Before every generation:
+
+```typescript
+const customerState = await polar.customers.getStateExternal({
+  externalId: ctx.orgId,
+});
+
+const hasActiveSubscription = 
+  (customerState.activeSubscriptions ?? []).length > 0;
+
+if (!hasActiveSubscription) {
+  throw new TRPCError({
+    code: "FORBIDDEN",
+    message: "SUBSCRIPTION_REQUIRED",
+  });
+}
+```
+
+### Usage Metering Event
+
+After successful generation:
+
+```typescript
+polar.events.ingest({
+  events: [
+    {
+      name: "tts_generation",
+      externalCustomerId: ctx.orgId,
+      metadata: { characters: input.text.length },
+      timestamp: new Date(),
+    },
+  ],
+});
+```
+
+### Cost Estimation
+
+The sidebar calculates estimated cost:
+
+```typescript
+let estimatedCostCents = 0;
+for (const sub of customerState.activeSubscriptions ?? []) {
+  for (const meter of sub.meters ?? []) {
+    estimatedCostCents += meter.amount ?? 0;
+  }
+}
+```
+
+## FAQ
+
+<AccordionGroup>
+  <Accordion title="What happens if I cancel my subscription?">
+    - You immediately lose access to generation features
+    - All existing custom voices and generated audio remain accessible
+    - You can view but not create new content
+    - You can resubscribe at any time to resume generating
+  </Accordion>
+  
+  <Accordion title="Can I change my payment method?">
+    Yes! Use the **Manage Subscription** button to access the Polar customer portal where you can update your payment method at any time.
+  </Accordion>
+  
+  <Accordion title="What if my payment fails?">
+    - Polar will attempt to retry the payment automatically
+    - You'll receive email notifications about the issue
+    - Update your payment method in the customer portal
+    - If payment fails repeatedly, your subscription may be suspended
+  </Accordion>
+  
+  <Accordion title="How accurate is the usage estimate?">
+    The estimate shown in your sidebar is very accurate but may have a slight delay due to event processing. Your final invoice is always calculated from the exact events recorded.
+  </Accordion>
+  
+  <Accordion title="Can I get a refund?">
+    Refund policies are managed through Polar. Contact support through the customer portal to discuss refund requests.
+  </Accordion>
+  
+  <Accordion title="Do unused characters roll over?">
+    No, this is not a credit system. You pay only for what you use each billing period. There's no expiration or rollover because you're not pre-purchasing characters.
+  </Accordion>
+  
+  <Accordion title="Is there a minimum monthly fee?">
+    Check your Polar product configuration. Typically, pay-as-you-go means you only pay for usage, but there may be a minimum subscription fee set in Polar.
+  </Accordion>
+</AccordionGroup>
+
+## Support
+
+For billing and subscription support:
+
+- **General questions**: Click **Help and support** in the sidebar
+- **Payment issues**: Access the Polar customer portal
+- **Technical issues**: Contact Resonance support team
+- **Billing disputes**: Reach out via the customer portal
+
+## Next Steps
+
+- [Generate your first audio](/guides/generating-speech) after subscribing
+- [Create custom voices](/guides/creating-custom-voices) for your organization
+- [Manage your team](/guides/managing-organizations) and control access

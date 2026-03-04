@@ -1,0 +1,432 @@
+---
+title: Environment Variables
+description: Complete reference for all environment variables required to run Resonance
+icon: key
+---
+
+Resonance uses [@t3-oss/env-nextjs](https://env.t3.gg/) for type-safe environment variable validation. All server-side variables are validated at build time using Zod schemas defined in `src/lib/env.ts:4`.
+
+## Quick Setup
+
+Create a `.env.local` file in your project root:
+
+```bash
+cp .env.example .env.local
+```
+
+## Required Variables
+
+### Database
+
+<AccordionGroup>
+  <Accordion title="DATABASE_URL" icon="database">
+    **Type:** `string` (required)
+    
+    PostgreSQL connection string for Prisma.
+    
+    ```env
+    DATABASE_URL="postgresql://user:password@host:5432/database"
+    ```
+    
+    <Note>
+      Resonance uses [Prisma Postgres](https://www.prisma.io/postgres) with the PostgreSQL adapter. Any PostgreSQL 12+ database will work.
+    </Note>
+    
+    **Example providers:**
+    - Prisma Postgres (recommended)
+    - Neon
+    - Supabase
+    - Railway Postgres
+  </Accordion>
+</AccordionGroup>
+
+### Chatterbox TTS (Modal)
+
+<AccordionGroup>
+  <Accordion title="CHATTERBOX_API_URL" icon="microphone">
+    **Type:** `url` (required)
+    
+    The deployed Modal endpoint URL for your Chatterbox TTS API.
+    
+    ```env
+    CHATTERBOX_API_URL="https://your-workspace--chatterbox-tts-serve.modal.run"
+    ```
+    
+    <Info>
+      This URL is displayed after running `modal deploy chatterbox_tts.py`. See [Modal Deployment](/configuration/modal-deployment) for setup instructions.
+    </Info>
+  </Accordion>
+  
+  <Accordion title="CHATTERBOX_API_KEY" icon="lock">
+    **Type:** `string` (required)
+    
+    API key for authenticating requests to the Chatterbox TTS endpoint.
+    
+    ```env
+    CHATTERBOX_API_KEY="your-secret-api-key-here"
+    ```
+    
+    <Warning>
+      Use a strong random string. This key must match the `CHATTERBOX_API_KEY` secret configured in Modal.
+    </Warning>
+    
+    Generate a secure key:
+    ```bash
+    openssl rand -base64 32
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Clerk Authentication
+
+<AccordionGroup>
+  <Accordion title="CLERK_SECRET_KEY" icon="shield">
+    **Type:** `string` (required)
+    
+    Server-side Clerk secret key (starts with `sk_`).
+    
+    ```env
+    CLERK_SECRET_KEY="sk_live_..."
+    ```
+    
+    Find this in your [Clerk Dashboard](https://dashboard.clerk.com) under **API Keys**.
+  </Accordion>
+  
+  <Accordion title="NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY" icon="globe">
+    **Type:** `string` (required, client-side)
+    
+    Public Clerk key (starts with `pk_`).
+    
+    ```env
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_live_..."
+    ```
+    
+    <Note>
+      The `NEXT_PUBLIC_` prefix makes this variable accessible in browser code.
+    </Note>
+  </Accordion>
+  
+  <Accordion title="NEXT_PUBLIC_CLERK_SIGN_IN_URL" icon="arrow-right-to-bracket">
+    **Type:** `string` (required, client-side)
+    
+    Path to your sign-in page.
+    
+    ```env
+    NEXT_PUBLIC_CLERK_SIGN_IN_URL="/sign-in"
+    ```
+  </Accordion>
+  
+  <Accordion title="NEXT_PUBLIC_CLERK_SIGN_UP_URL" icon="user-plus">
+    **Type:** `string` (required, client-side)
+    
+    Path to your sign-up page.
+    
+    ```env
+    NEXT_PUBLIC_CLERK_SIGN_UP_URL="/sign-up"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+See [Clerk Authentication Setup](/configuration/clerk-auth) for complete configuration.
+
+### Cloudflare R2 Storage
+
+<AccordionGroup>
+  <Accordion title="R2_ACCOUNT_ID" icon="cloud">
+    **Type:** `string` (required)
+    
+    Your Cloudflare account ID.
+    
+    ```env
+    R2_ACCOUNT_ID="ea63931e6e8ff54c5be60feacd3026d6"
+    ```
+    
+    Find this in the [Cloudflare Dashboard](https://dash.cloudflare.com) sidebar under **R2**.
+  </Accordion>
+  
+  <Accordion title="R2_ACCESS_KEY_ID" icon="key">
+    **Type:** `string` (required)
+    
+    R2 API token access key ID.
+    
+    ```env
+    R2_ACCESS_KEY_ID="abc123..."
+    ```
+  </Accordion>
+  
+  <Accordion title="R2_SECRET_ACCESS_KEY" icon="lock-keyhole">
+    **Type:** `string` (required)
+    
+    R2 API token secret access key.
+    
+    ```env
+    R2_SECRET_ACCESS_KEY="xyz789..."
+    ```
+    
+    <Warning>
+      Never commit this to version control. Keep your `.env.local` file in `.gitignore`.
+    </Warning>
+  </Accordion>
+  
+  <Accordion title="R2_BUCKET_NAME" icon="bucket">
+    **Type:** `string` (required)
+    
+    Name of your R2 bucket.
+    
+    ```env
+    R2_BUCKET_NAME="resonance-app"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+See [Cloudflare R2 Setup](/configuration/cloudflare-r2) for bucket creation and token generation.
+
+### Polar Billing
+
+<AccordionGroup>
+  <Accordion title="POLAR_ACCESS_TOKEN" icon="credit-card">
+    **Type:** `string` (required)
+    
+    Your Polar API access token.
+    
+    ```env
+    POLAR_ACCESS_TOKEN="polar_at_..."
+    ```
+    
+    Generate this in the [Polar Dashboard](https://polar.sh/dashboard) under **Settings → API Tokens**.
+  </Accordion>
+  
+  <Accordion title="POLAR_SERVER" icon="server">
+    **Type:** `enum` (required)
+    
+    Polar environment mode.
+    
+    ```env
+    POLAR_SERVER="sandbox"
+    ```
+    
+    **Options:**
+    - `sandbox` - Use for development (test card: `4242 4242 4242 4242`)
+    - `production` - Use for live payments
+    
+    **Default:** `sandbox` (defined in `src/lib/env.ts:7`)
+  </Accordion>
+  
+  <Accordion title="POLAR_PRODUCT_ID" icon="box">
+    **Type:** `string` (required)
+    
+    The ID of your Polar product with usage-based metering.
+    
+    ```env
+    POLAR_PRODUCT_ID="prod_..."
+    ```
+    
+    <Info>
+      Create a product in Polar Dashboard and attach a character-based meter for TTS billing.
+    </Info>
+  </Accordion>
+</AccordionGroup>
+
+See [Polar Billing Configuration](/configuration/polar-billing) for product and meter setup.
+
+### Application
+
+<AccordionGroup>
+  <Accordion title="APP_URL" icon="link">
+    **Type:** `string` (required)
+    
+    The base URL of your application.
+    
+    ```env
+    # Development
+    APP_URL="http://localhost:3000"
+    
+    # Production
+    APP_URL="https://resonance.yourdomain.com"
+    ```
+    
+    Used for:
+    - Clerk redirect URLs (checkout success, billing portal)
+    - Polar webhook verification
+    - Email templates
+  </Accordion>
+</AccordionGroup>
+
+## Optional Variables
+
+### Development
+
+<AccordionGroup>
+  <Accordion title="SKIP_ENV_VALIDATION" icon="forward">
+    **Type:** `boolean` (optional)
+    
+    Skip environment variable validation during build.
+    
+    ```env
+    SKIP_ENV_VALIDATION="true"
+    ```
+    
+    <Warning>
+      Only use this for testing or when building without environment access. Never use in production.
+    </Warning>
+    
+    Defined in `src/lib/env.ts:19`
+  </Accordion>
+  
+  <Accordion title="NODE_ENV" icon="node">
+    **Type:** `enum` (automatic)
+    
+    Set automatically by Node.js.
+    
+    **Values:**
+    - `development` - Local dev server (`npm run dev`)
+    - `production` - Production builds (`npm run build && npm start`)
+    - `test` - Testing environment
+    
+    Used in `src/lib/db.ts:14` to prevent Prisma connection pooling in development.
+  </Accordion>
+</AccordionGroup>
+
+## Validation
+
+All environment variables are validated using Zod at application startup. If validation fails, the build will error with details about missing or invalid variables.
+
+```typescript src/lib/env.ts
+import { createEnv } from "@t3-oss/env-nextjs";
+import { z } from "zod";
+
+export const env = createEnv({
+  server: {
+    POLAR_ACCESS_TOKEN: z.string().min(1),
+    POLAR_SERVER: z.enum(["sandbox", "production"]).default("sandbox"),
+    POLAR_PRODUCT_ID: z.string().min(1),
+    DATABASE_URL: z.string().min(1),
+    APP_URL: z.string().min(1),
+    R2_ACCOUNT_ID: z.string().min(1),
+    R2_ACCESS_KEY_ID: z.string().min(1),
+    R2_SECRET_ACCESS_KEY: z.string().min(1),
+    R2_BUCKET_NAME: z.string().min(1),
+    CHATTERBOX_API_URL: z.url(),
+    CHATTERBOX_API_KEY: z.string().min(1),
+  },
+  experimental__runtimeEnv: {},
+  skipValidation: !!process.env.SKIP_ENV_VALIDATION,
+});
+```
+
+## Environment File Structure
+
+Here's a complete `.env.local` template:
+
+```env .env.local
+# Database
+DATABASE_URL="postgresql://..."
+
+# Chatterbox TTS (Modal)
+CHATTERBOX_API_URL="https://your-workspace--chatterbox-tts-serve.modal.run"
+CHATTERBOX_API_KEY="your-api-key"
+
+# Clerk
+CLERK_SECRET_KEY="sk_..."
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_..."
+NEXT_PUBLIC_CLERK_SIGN_IN_URL="/sign-in"
+NEXT_PUBLIC_CLERK_SIGN_UP_URL="/sign-up"
+
+# Cloudflare R2
+R2_ACCOUNT_ID="your-account-id"
+R2_ACCESS_KEY_ID="your-access-key"
+R2_SECRET_ACCESS_KEY="your-secret-key"
+R2_BUCKET_NAME="resonance-app"
+
+# Polar (Billing)
+POLAR_ACCESS_TOKEN="polar_at_..."
+POLAR_SERVER="sandbox"
+POLAR_PRODUCT_ID="prod_..."
+
+# App
+APP_URL="http://localhost:3000"
+```
+
+## Security Best Practices
+
+<Warning>
+  **Never commit `.env.local` or any file containing secrets to version control.**
+</Warning>
+
+<Steps>
+  <Step title="Use .gitignore">
+    Ensure `.env.local` is in your `.gitignore` file:
+    
+    ```gitignore
+    .env*.local
+    .env
+    ```
+  </Step>
+  
+  <Step title="Use strong secrets">
+    Generate cryptographically secure keys for `CHATTERBOX_API_KEY`:
+    
+    ```bash
+    openssl rand -base64 32
+    ```
+  </Step>
+  
+  <Step title="Rotate keys regularly">
+    Update API keys and tokens periodically, especially after team member changes.
+  </Step>
+  
+  <Step title="Use environment-specific files">
+    - `.env.local` - Local development (not committed)
+    - `.env.production` - Production secrets (use hosting provider's secret management)
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Validation errors at build time
+
+```
+❌ Invalid environment variables:
+  CHATTERBOX_API_URL: Invalid url
+```
+
+**Solution:** Ensure the URL includes protocol (`https://`) and is properly formatted.
+
+### Variables not loading
+
+<Steps>
+  <Step>
+    Restart your dev server after changing `.env.local`
+  </Step>
+  <Step>
+    Check that Next.js recognizes the file (must be in project root)
+  </Step>
+  <Step>
+    Verify `NEXT_PUBLIC_` prefix for client-side variables
+  </Step>
+</Steps>
+
+### SKIP_ENV_VALIDATION not working
+
+This variable must be set **before** the Next.js build process runs:
+
+```bash
+SKIP_ENV_VALIDATION=true npm run build
+```
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Database Setup" icon="database" href="/configuration/database-setup">
+    Prisma schema and migrations
+  </Card>
+  <Card title="Cloudflare R2" icon="cloud" href="/configuration/cloudflare-r2">
+    Object storage configuration
+  </Card>
+  <Card title="Clerk Auth" icon="shield" href="/configuration/clerk-auth">
+    Authentication and organizations
+  </Card>
+  <Card title="Polar Billing" icon="credit-card" href="/configuration/polar-billing">
+    Usage-based billing setup
+  </Card>
+</CardGroup>

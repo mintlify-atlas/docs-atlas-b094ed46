@@ -1,0 +1,593 @@
+---
+title: Modal Deployment
+description: Deploy Chatterbox TTS to serverless GPU infrastructure with R2 integration
+icon: server
+---
+
+Resonance deploys the [Chatterbox TTS](https://github.com/resemble-ai/chatterbox) model to [Modal](https://modal.com) for serverless GPU inference. Modal provides pay-per-second GPU billing with automatic scaling and zero infrastructure management.
+
+## Why Modal?
+
+- **Serverless GPUs** - NVIDIA A10G on-demand, pay only when active
+- **Auto-scaling** - 0 to 10+ concurrent requests automatically
+- **Fast Cold Starts** - Container provisioning in ~30 seconds
+- **R2 Integration** - Direct bucket mounting for voice references
+- **No DevOps** - No servers, containers, or Kubernetes to manage
+
+## Prerequisites
+
+- Modal account ([sign up free](https://modal.com))
+- Modal CLI installed: `pip install modal`
+- Cloudflare R2 bucket configured (see [R2 Setup](/configuration/cloudflare-r2))
+- Hugging Face account for model weights
+
+## Quick Setup
+
+<Steps>
+  <Step title="Install Modal CLI">
+    ```bash
+    pip install modal
+    ```
+    
+    Or use pipx for isolated installation:
+    ```bash
+    pipx install modal
+    ```
+  </Step>
+  
+  <Step title="Authenticate Modal">
+    ```bash
+    modal token set
+    ```
+    
+    This opens your browser to authenticate and saves credentials locally.
+  </Step>
+  
+  <Step title="Create Modal secrets">
+    Configure three secrets in [Modal Dashboard → Secrets](https://modal.com/secrets):
+    
+    <AccordionGroup>
+      <Accordion title="cloudflare-r2" icon="cloud">
+        R2 credentials for bucket mounting:
+        
+        ```bash
+        modal secret create cloudflare-r2 \
+          AWS_ACCESS_KEY_ID=<your-r2-access-key-id> \
+          AWS_SECRET_ACCESS_KEY=<your-r2-secret-access-key>
+        ```
+        
+        <Info>
+          Use the same R2 credentials from your `.env.local` file.
+        </Info>
+      </Accordion>
+      
+      <Accordion title="chatterbox-api-key" icon="key">
+        API key to protect the Chatterbox endpoint:
+        
+        ```bash
+        modal secret create chatterbox-api-key \
+          CHATTERBOX_API_KEY=<your-api-key>
+        ```
+        
+        Generate a secure key:
+        ```bash
+        openssl rand -base64 32
+        ```
+        
+        <Warning>
+          This key must match `CHATTERBOX_API_KEY` in your Next.js `.env.local`.
+        </Warning>
+      </Accordion>
+      
+      <Accordion title="hf-token" icon="huggingface">
+        Hugging Face token for downloading model weights:
+        
+        ```bash
+        modal secret create hf-token \
+          HF_TOKEN=<your-huggingface-token>
+        ```
+        
+        Get your token from [Hugging Face Settings → Access Tokens](https://huggingface.co/settings/tokens).
+      </Accordion>
+    </AccordionGroup>
+  </Step>
+  
+  <Step title="Update chatterbox_tts.py">
+    Edit `chatterbox_tts.py` in your project root with your R2 credentials:
+    
+    ```python chatterbox_tts.py
+    # R2 cloud bucket mount (read-only, replaces Modal Volume)
+    R2_BUCKET_NAME = "resonance-app"  # Your bucket name
+    R2_ACCOUNT_ID = "your-cloudflare-account-id"  # Your account ID
+    R2_MOUNT_PATH = "/r2"
+    ```
+    
+    Defined in `chatterbox_tts.py:23`.
+  </Step>
+  
+  <Step title="Deploy to Modal">
+    ```bash
+    modal deploy chatterbox_tts.py
+    ```
+    
+    This builds the container image, uploads code, and deploys the API.
+    
+    **Output:**
+    ```
+    ✓ Initialized. View run at https://modal.com/apps/...
+    ✓ Created function "Chatterbox.serve".
+    
+    🎉 Deployed app "chatterbox-tts"!
+    
+    Endpoint: https://your-workspace--chatterbox-tts-serve.modal.run
+    ```
+    
+    Copy the endpoint URL for your `.env.local`.
+  </Step>
+  
+  <Step title="Configure Next.js">
+    Add Modal endpoint to `.env.local`:
+    
+    ```env .env.local
+    CHATTERBOX_API_URL="https://your-workspace--chatterbox-tts-serve.modal.run"
+    CHATTERBOX_API_KEY="your-api-key-from-step-3"
+    ```
+  </Step>
+  
+  <Step title="Generate API types">
+    Sync OpenAPI spec from deployed Modal app:
+    
+    ```bash
+    npm run sync-api
+    ```
+    
+    This fetches the OpenAPI spec from Modal and generates TypeScript types in `src/types/`.
+  </Step>
+</Steps>
+
+## Architecture
+
+### Modal Application
+
+The `chatterbox_tts.py` file defines a complete Modal application:
+
+```python chatterbox_tts.py
+import modal
+
+# Define container image with dependencies
+image = modal.Image.debian_slim(python_version="3.10").uv_pip_install(
+    "chatterbox-tts==0.1.6",
+    "fastapi[standard]==0.124.4",
+    "peft==0.18.0",
+)
+
+app = modal.App("chatterbox-tts", image=image)
+```
+
+Defined in `chatterbox_tts.py:34`.
+
+### R2 Bucket Mount
+
+Modal mounts your R2 bucket read-only for direct file access:
+
+```python chatterbox_tts.py
+r2_bucket = modal.CloudBucketMount(
+    R2_BUCKET_NAME,
+    bucket_endpoint_url=f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+    secret=modal.Secret.from_name("cloudflare-r2"),
+    read_only=True,
+)
+
+@app.cls(
+    gpu="a10g",
+    scaledown_window=60 * 5,  # 5 minutes idle before shutdown
+    secrets=[
+        modal.Secret.from_name("hf-token"),
+        modal.Secret.from_name("chatterbox-api-key"),
+        modal.Secret.from_name("cloudflare-r2"),
+    ],
+    volumes={R2_MOUNT_PATH: r2_bucket},  # Mount at /r2
+)
+```
+
+Defined in `chatterbox_tts.py:26` and `chatterbox_tts.py:83`.
+
+**Benefits:**
+- No file uploads to Modal
+- Voice references accessible immediately after upload to R2
+- Single source of truth for audio files
+
+### GPU Configuration
+
+<AccordionGroup>
+  <Accordion title="GPU Type" icon="microchip">
+    **NVIDIA A10G** - 24 GB VRAM, optimized for inference
+    
+    ```python
+    @app.cls(gpu="a10g")
+    ```
+    
+    **Cost:** ~$0.60/hour (pay per second)
+    
+    Alternative GPUs:
+    - `a100` - More powerful, $2.50/hour
+    - `t4` - Cheaper, slower, $0.20/hour
+    - `any` - Let Modal choose available GPU
+  </Accordion>
+  
+  <Accordion title="Scaledown Window" icon="clock">
+    **5 minutes** - How long to keep GPU warm after last request
+    
+    ```python
+    @app.cls(scaledown_window=60 * 5)
+    ```
+    
+    **Trade-offs:**
+    - Shorter window: Lower costs, more cold starts
+    - Longer window: Higher costs, fewer cold starts
+    
+    <Info>
+      5 minutes balances cost and user experience for typical usage patterns.
+    </Info>
+  </Accordion>
+  
+  <Accordion title="Concurrency" icon="arrows-left-right">
+    **10 concurrent requests** - Maximum parallel generations
+    
+    ```python
+    @modal.concurrent(max_inputs=10)
+    ```
+    
+    Modal automatically scales to handle concurrent load:
+    - 1-10 requests: Single GPU instance
+    - 11+ requests: Additional instances spin up
+    
+    Defined in `chatterbox_tts.py:93`.
+  </Accordion>
+</AccordionGroup>
+
+## API Endpoints
+
+### POST /generate
+
+Generate TTS audio from text and voice reference.
+
+**Request:**
+```typescript
+interface TTSRequest {
+  prompt: string;              // Text to synthesize (1-5000 chars)
+  voice_key: string;           // R2 path (e.g., "voices/system/clxyz123")
+  temperature?: number;        // Creativity (0.0-2.0, default: 0.8)
+  top_p?: number;             // Nucleus sampling (0.0-1.0, default: 0.95)
+  top_k?: number;             // Top-K sampling (1-10000, default: 1000)
+  repetition_penalty?: number; // Repetition penalty (1.0-2.0, default: 1.2)
+  norm_loudness?: boolean;    // Normalize loudness (default: true)
+}
+```
+
+Defined in `chatterbox_tts.py:71`.
+
+**Response:**
+- **Content-Type:** `audio/wav`
+- **Body:** WAV audio file (24kHz, 16-bit PCM)
+
+**Example:**
+```bash
+curl -X POST "https://your-workspace--chatterbox-tts-serve.modal.run/generate" \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: your-api-key" \
+  -d '{
+    "prompt": "Hello from Resonance [chuckle].",
+    "voice_key": "voices/system/clxyz123"
+  }' \
+  --output output.wav
+```
+
+### GET /docs
+
+Interactive API documentation (Swagger UI).
+
+Visit: `https://your-workspace--chatterbox-tts-serve.modal.run/docs`
+
+## Model Loading
+
+Chatterbox TTS model is loaded once per GPU instance:
+
+```python chatterbox_tts.py
+@app.cls(...)
+class Chatterbox:
+    @modal.enter()
+    def load_model(self):
+        self.model = ChatterboxTurboTTS.from_pretrained(device="cuda")
+```
+
+Defined in `chatterbox_tts.py:95`.
+
+**Lifecycle:**
+1. First request triggers container start (~30s cold start)
+2. `load_model()` downloads weights from Hugging Face (~10s)
+3. Model is cached for subsequent requests
+4. After 5 minutes idle, container shuts down
+
+<Note>
+  Model weights (~2 GB) are cached in Modal's container image layer cache, reducing cold start times on subsequent runs.
+</Note>
+
+## Voice Key Format
+
+Voice keys follow the R2 bucket structure:
+
+**System voices:**
+```python
+voice_key = "voices/system/{voiceId}"
+```
+Example: `"voices/system/clxyz123abc"`
+
+**Custom voices:**
+```python
+voice_key = "voices/custom/{voiceId}"
+```
+Example: `"voices/custom/clabc789def"`
+
+Modal resolves these to absolute paths:
+```python
+voice_path = Path(R2_MOUNT_PATH) / voice_key
+# /r2/voices/system/clxyz123abc
+```
+
+Defined in `chatterbox_tts.py:117`.
+
+## Authentication
+
+The API is protected by API key authentication:
+
+```python chatterbox_tts.py
+from fastapi.security import APIKeyHeader
+
+api_key_scheme = APIKeyHeader(
+    name="x-api-key",
+    scheme_name="ApiKeyAuth",
+    auto_error=False,
+)
+
+def verify_api_key(x_api_key: str | None = Security(api_key_scheme)):
+    expected = os.environ.get("CHATTERBOX_API_KEY", "")
+    if not expected or x_api_key != expected:
+        raise HTTPException(status_code=403, detail="Invalid API key")
+    return x_api_key
+```
+
+Defined in `chatterbox_tts.py:59`.
+
+**Usage from Next.js:**
+```typescript
+const response = await fetch(`${env.CHATTERBOX_API_URL}/generate`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "X-Api-Key": env.CHATTERBOX_API_KEY,
+  },
+  body: JSON.stringify({ prompt, voice_key }),
+});
+```
+
+## Testing Locally
+
+Modal provides a `local_entrypoint` for testing:
+
+```bash
+modal run chatterbox_tts.py \
+  --prompt "Hello from Chatterbox [chuckle]." \
+  --voice-key "voices/system/clxyz123" \
+  --output-path "/tmp/output.wav"
+```
+
+Defined in `chatterbox_tts.py:173`.
+
+**This:**
+1. Spins up a Modal container with GPU
+2. Mounts R2 bucket
+3. Generates audio
+4. Saves to local file
+5. Shuts down container
+
+<Info>
+  Use this to verify R2 mounting and voice key resolution before deploying.
+</Info>
+
+## Monitoring
+
+### Modal Dashboard
+
+View real-time metrics at [modal.com/apps](https://modal.com/apps):
+
+- **Active containers** - Currently running GPU instances
+- **Request volume** - Requests per second/minute/hour
+- **Cold start rate** - Percentage of requests triggering cold starts
+- **Error rate** - Failed requests
+- **GPU utilization** - Time GPU was active vs idle
+
+### Logs
+
+View logs in real-time:
+
+```bash
+modal app logs chatterbox-tts
+```
+
+Or in the dashboard under **Apps → chatterbox-tts → Logs**.
+
+### Costs
+
+Track GPU usage and costs:
+
+1. Go to **Billing** in Modal Dashboard
+2. View breakdown by app and GPU type
+3. Export usage data for accounting
+
+**Typical costs:**
+- 100 generations/day ≈ 1 hour GPU time = $0.60/day = $18/month
+- 1,000 generations/day ≈ 10 hours GPU time = $6/day = $180/month
+
+<Info>
+  With 5-minute scaledown, actual GPU time is much less than total app uptime.
+</Info>
+
+## Optimizations
+
+### Reduce Cold Starts
+
+<AccordionGroup>
+  <Accordion title="Increase scaledown window" icon="clock">
+    Keep GPU warm longer:
+    
+    ```python
+    @app.cls(scaledown_window=60 * 15)  # 15 minutes
+    ```
+    
+    **Trade-off:** Higher idle costs, fewer cold starts
+  </Accordion>
+  
+  <Accordion title="Use keep-warm policy" icon="fire">
+    Maintain minimum active containers:
+    
+    ```python
+    @app.cls(keep_warm=1)  # Always keep 1 container warm
+    ```
+    
+    **Cost:** ~$0.60/hour continuously
+  </Accordion>
+  
+  <Accordion title="Preload model in image" icon="box">
+    Bake model weights into container image:
+    
+    ```python
+    image = (
+        modal.Image.debian_slim(python_version="3.10")
+        .uv_pip_install("chatterbox-tts==0.1.6", ...)
+        .run_commands(
+            "python -c 'from chatterbox.tts_turbo import ChatterboxTurboTTS; ChatterboxTurboTTS.from_pretrained()'"
+        )
+    )
+    ```
+    
+    **Benefit:** Reduces cold start by ~10 seconds
+  </Accordion>
+</AccordionGroup>
+
+### Improve Throughput
+
+<AccordionGroup>
+  <Accordion title="Increase concurrency" icon="arrows-left-right">
+    Handle more parallel requests per GPU:
+    
+    ```python
+    @modal.concurrent(max_inputs=20)
+    ```
+    
+    **Note:** A10G can typically handle 5-10 concurrent TTS generations before VRAM becomes a bottleneck.
+  </Accordion>
+  
+  <Accordion title="Use batch generation" icon="layer-group">
+    Process multiple prompts in a single request:
+    
+    ```python
+    @modal.method()
+    def generate_batch(self, prompts: list[str], audio_prompt_path: str):
+        return [self.model.generate(p, audio_prompt_path) for p in prompts]
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+### Deployment fails
+
+```
+Error: Failed to build image
+```
+
+**Solution:**
+1. Check Python version matches: `python_version="3.10"`
+2. Verify package versions are valid
+3. Try deploying with `--force-build` flag:
+   ```bash
+   modal deploy chatterbox_tts.py --force-build
+   ```
+
+### Voice not found error
+
+```
+Voice not found at 'voices/system/clxyz123'
+```
+
+**Checklist:**
+1. Verify voice exists in R2:
+   ```bash
+   aws s3 ls s3://resonance-app/voices/system/ \
+     --endpoint-url https://{account_id}.r2.cloudflarestorage.com
+   ```
+2. Check Modal secret `cloudflare-r2` has correct credentials
+3. Verify `R2_ACCOUNT_ID` and `R2_BUCKET_NAME` in `chatterbox_tts.py`
+4. Test mounting:
+   ```bash
+   modal run chatterbox_tts.py --voice-key "voices/system/clxyz123"
+   ```
+
+### API key rejected
+
+```
+HTTPException: Invalid API key
+```
+
+**Solution:**
+1. Verify Modal secret `chatterbox-api-key` is set:
+   ```bash
+   modal secret list
+   ```
+2. Ensure `CHATTERBOX_API_KEY` matches in `.env.local` and Modal secret
+3. Check header name is `X-Api-Key` (case-sensitive)
+4. Redeploy after changing secret:
+   ```bash
+   modal deploy chatterbox_tts.py
+   ```
+
+### Slow cold starts
+
+**Expected cold start time:** 30-40 seconds
+
+If longer:
+1. Check container build time in logs
+2. Consider preloading model weights in image (see [Optimizations](#optimizations))
+3. Use `keep_warm=1` for production
+
+### GPU out of memory
+
+```
+RuntimeError: CUDA out of memory
+```
+
+**Solutions:**
+1. Reduce `max_inputs` concurrency
+2. Upgrade to A100 GPU:
+   ```python
+   @app.cls(gpu="a100")
+   ```
+3. Process shorter prompts (split long text)
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Cloudflare R2" icon="cloud" href="/configuration/cloudflare-r2">
+    Configure bucket mounting
+  </Card>
+  <Card title="Environment Variables" icon="key" href="/configuration/environment-variables">
+    Required Modal environment variables
+  </Card>
+  <Card title="Modal Documentation" icon="book" href="https://modal.com/docs">
+    Official Modal documentation
+  </Card>
+  <Card title="Chatterbox TTS" icon="microphone" href="https://github.com/resemble-ai/chatterbox">
+    Chatterbox model repository
+  </Card>
+</CardGroup>

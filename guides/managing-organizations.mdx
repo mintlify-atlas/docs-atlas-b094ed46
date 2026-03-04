@@ -1,0 +1,283 @@
+---
+title: 'Managing Organizations'
+description: 'Manage teams, members, and access control using Clerk Organizations'
+icon: 'users'
+---
+
+Resonance uses **Clerk Organizations** to manage teams, collaboration, and access control. All resources (voices, generations, and billing) are scoped to your organization.
+
+## Understanding Organizations
+
+Every resource in Resonance belongs to an organization:
+
+- **Custom Voices** - Shared across all organization members
+- **Generated Audio** - Accessible to the entire team
+- **Billing & Subscriptions** - Managed at the organization level
+- **Usage Metering** - Tracked per organization
+
+<Info>
+  Personal accounts are not supported in Resonance. You must create or join an organization to use the platform.
+</Info>
+
+## Creating Your First Organization
+
+<Steps>
+  <Step title="Sign In">
+    After signing into Resonance for the first time, you'll be redirected to the organization selection page (`/org-selection`).
+  </Step>
+
+  <Step title="Create Organization">
+    Click **Create Organization** and provide:
+    - Organization name
+    - Optional: Upload organization logo
+    - Optional: Add organization slug/URL
+  </Step>
+
+  <Step title="Access Dashboard">
+    Once created, you'll be redirected to the main dashboard where you can start using Resonance features.
+  </Step>
+</Steps>
+
+## Switching Organizations
+
+If you're a member of multiple organizations:
+
+1. Click the **Organization Switcher** in the sidebar header
+2. Select the organization you want to switch to
+3. The entire interface updates to show that organization's resources
+
+<Tip>
+  The organization switcher displays the organization avatar and name. When the sidebar is collapsed, only the avatar is shown.
+</Tip>
+
+## Inviting Team Members
+
+<Steps>
+  <Step title="Open Organization Settings">
+    Click **Settings** in the sidebar menu, or click the organization name in the switcher and select "Manage organization".
+  </Step>
+
+  <Step title="Navigate to Members">
+    In the Clerk Organization Profile interface, go to the **Members** tab.
+  </Step>
+
+  <Step title="Send Invitations">
+    - Click **Invite** or **Add member**
+    - Enter the email address of the person you want to invite
+    - Select their role (Admin or Member)
+    - Send the invitation
+  </Step>
+
+  <Step title="Member Accepts">
+    The invited user will:
+    1. Receive an email invitation
+    2. Click the link to accept
+    3. Sign in or create a Clerk account
+    4. Gain access to your organization
+  </Step>
+</Steps>
+
+## Member Roles
+
+Clerk provides two default roles:
+
+<AccordionGroup>
+  <Accordion title="Admin" icon="shield-check">
+    Full administrative access:
+    - Manage organization settings
+    - Invite and remove members
+    - Change member roles
+    - Manage billing and subscriptions
+    - Create and delete custom voices
+    - Generate speech
+    - Access all organization resources
+  </Accordion>
+  
+  <Accordion title="Member" icon="user">
+    Standard user access:
+    - Generate speech
+    - Use custom voices
+    - View organization resources
+    - Access generation history
+    - Cannot manage organization or billing
+    - Cannot invite/remove members
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  The organization creator is automatically assigned the **Admin** role.
+</Note>
+
+## Managing Organization Settings
+
+Access organization settings by clicking **Settings** in the sidebar:
+
+### General Settings
+
+- **Organization Name** - Update your organization's display name
+- **Organization Slug** - Change the URL-friendly identifier
+- **Organization Logo** - Upload or update the organization avatar
+
+### Members Management
+
+- View all current members
+- See pending invitations
+- Change member roles
+- Remove members from the organization
+- Revoke pending invitations
+
+### Danger Zone
+
+- Leave the organization (if not the only admin)
+- Delete the organization (admin only)
+
+<Warning>
+  Deleting an organization is permanent and will remove:
+  - All custom voices
+  - All generated audio
+  - All member access
+  - Billing history (though Polar retains records)
+  
+  This action cannot be undone.
+</Warning>
+
+## Organization Scoping
+
+Understand how resources are scoped:
+
+### Custom Voices
+
+- Created at the organization level
+- Accessible to all organization members
+- System voices are available to everyone
+- Cannot be shared across organizations
+
+### Generated Audio
+
+- All generations are organization-scoped
+- Viewable by any organization member
+- History is shared across the team
+- Cannot be transferred between organizations
+
+### Billing & Subscriptions
+
+- One subscription per organization
+- Usage is aggregated across all members
+- Billing is managed at the organization level
+- See [Usage & Billing](/guides/usage-billing) for details
+
+## Collaboration Workflows
+
+<CardGroup cols={2}>
+  <Card title="Shared Voice Library" icon="books">
+    All team members access the same custom voices, ensuring brand consistency across all generated audio.
+  </Card>
+  
+  <Card title="Unified History" icon="clock-rotate-left">
+    Everyone can see and reuse previously generated audio, reducing duplicate work and costs.
+  </Card>
+  
+  <Card title="Centralized Billing" icon="credit-card">
+    Organization admins manage a single subscription that covers all team members' usage.
+  </Card>
+  
+  <Card title="Access Control" icon="lock">
+    Control who can manage settings vs. who can only generate speech using role-based permissions.
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+### For Small Teams (1-5 members)
+
+- Create one organization for your company/project
+- Make key stakeholders **Admins**
+- Use **Member** role for content creators
+- Establish naming conventions for custom voices
+
+### For Agencies
+
+- Create separate organizations for each client
+- Invite client stakeholders as **Members**
+- Use descriptive organization names (e.g., "Acme Corp - TTS")
+- Document voice usage in voice descriptions
+
+### For Enterprises
+
+- Create organizations by department or project
+- Designate dedicated billing admins
+- Implement voice naming standards
+- Regular audit of members and access
+- Use organization descriptions to clarify purpose
+
+## Clerk Integration Details
+
+Resonance uses Clerk for authentication and organization management:
+
+### Organization Switcher Component
+
+- Located in the sidebar header
+- Shows organization avatar and name
+- Provides quick switching between organizations
+- Displays "Create organization" option
+- Responsive design (collapses with sidebar)
+
+### Organization Profile
+
+- Accessible via **Settings** menu item
+- Opens Clerk's organization management interface
+- Fully styled to match Resonance design
+- Handles invitations, members, and settings
+
+### Authentication Flow
+
+1. User signs in with Clerk
+2. System checks for organization membership
+3. If no organizations: redirect to `/org-selection`
+4. If organizations exist: load last active organization
+5. All API calls include organization context
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Can't See Organization Resources">
+    - Verify you're in the correct organization using the switcher
+    - Check that you have proper role permissions
+    - Refresh the page to reload organization context
+    - Ensure you've accepted the organization invitation
+  </Accordion>
+  
+  <Accordion title="Invitation Not Received">
+    - Check spam/junk folder
+    - Verify the correct email address was used
+    - Ask an admin to resend the invitation
+    - Try accepting via the Clerk dashboard
+  </Accordion>
+  
+  <Accordion title="Can't Access Settings">
+    - Only **Admins** can access full organization settings
+    - **Members** have limited permissions
+    - Ask an organization admin to change your role
+  </Accordion>
+  
+  <Accordion title="Multiple Organizations Confusion">
+    - Use the organization switcher to clearly see which org is active
+    - The active organization's name appears in the sidebar header
+    - Resources are never shared across organizations
+    - Each organization has separate billing
+  </Accordion>
+</AccordionGroup>
+
+## Security & Privacy
+
+- All organization data is isolated
+- Members can only access their organizations' resources
+- Clerk handles authentication and authorization
+- Organization IDs are used as security boundaries
+- API routes validate organization membership
+
+## Next Steps
+
+- [Set up billing](/guides/usage-billing) for your organization
+- [Create custom voices](/guides/creating-custom-voices) for your team
+- [Generate speech](/guides/generating-speech) collaboratively

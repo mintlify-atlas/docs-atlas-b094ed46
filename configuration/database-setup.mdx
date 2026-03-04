@@ -1,0 +1,511 @@
+---
+title: Database Setup
+description: Configure PostgreSQL with Prisma for voice data and generation history
+icon: database
+---
+
+Resonance uses [Prisma](https://www.prisma.io/) with PostgreSQL to store voice metadata, generation history, and user data. The database schema is defined in `prisma/schema.prisma:1` and managed through migrations.
+
+## Prerequisites
+
+You'll need a PostgreSQL 12+ database. Recommended providers:
+
+- **[Prisma Postgres](https://www.prisma.io/postgres)** - Managed Postgres with connection pooling
+- **[Neon](https://neon.tech)** - Serverless Postgres with branching
+- **[Supabase](https://supabase.com)** - Open-source Firebase alternative
+- **[Railway](https://railway.app)** - Simple Postgres provisioning
+
+## Quick Start
+
+<Steps>
+  <Step title="Set database URL">
+    Add your PostgreSQL connection string to `.env.local`:
+    
+    ```env .env.local
+    DATABASE_URL="postgresql://user:password@host:5432/resonance"
+    ```
+  </Step>
+  
+  <Step title="Deploy migrations">
+    Run existing migrations to create tables:
+    
+    ```bash
+    npx prisma migrate deploy
+    ```
+    
+    This executes the migration defined in `prisma/migrations/20260222040408_init/migration.sql:1`.
+  </Step>
+  
+  <Step title="Generate Prisma Client">
+    Generate the type-safe database client:
+    
+    ```bash
+    npx prisma generate
+    ```
+    
+    <Info>
+      This runs automatically via the `postinstall` script in `package.json:9` when you run `npm install`.
+    </Info>
+  </Step>
+  
+  <Step title="Seed system voices">
+    Populate the database with 20 pre-built voices:
+    
+    ```bash
+    npx prisma db seed
+    ```
+    
+    Defined in `prisma.config.ts:10`. See [Voice Seeding](#voice-seeding) below.
+  </Step>
+</Steps>
+
+## Schema Overview
+
+The Prisma schema defines two main models with PostgreSQL-specific features.
+
+### Models
+
+<AccordionGroup>
+  <Accordion title="Voice" icon="microphone">
+    Stores voice metadata for both system and custom voices.
+    
+    ```prisma prisma/schema.prisma
+    model Voice {
+      id          String        @id @default(cuid())
+      orgId       String?       // null for system voices, org ID for custom
+      name        String
+      description String?
+      category    VoiceCategory @default(GENERAL)
+      language    String        @default("en-US")
+      variant     VoiceVariant  // SYSTEM or CUSTOM
+      r2ObjectKey String?       // R2 path to audio reference file
+      generations Generation[]
+      createdAt   DateTime      @default(now())
+      updatedAt   DateTime      @updatedAt
+      
+      @@index([variant])
+      @@index([orgId])
+    }
+    ```
+    
+    **Key fields:**
+    - `variant` - `SYSTEM` (shared) or `CUSTOM` (organization-specific)
+    - `orgId` - `null` for system voices, Clerk org ID for custom voices
+    - `r2ObjectKey` - Path to reference audio in R2 (e.g., `voices/system/clxyz123`)
+    - `category` - One of 12 categories (see [Voice Categories](#voice-categories))
+    
+    Defined in `prisma/schema.prisma:36`.
+  </Accordion>
+  
+  <Accordion title="Generation" icon="waveform">
+    Stores TTS generation history with parameters and output references.
+    
+    ```prisma prisma/schema.prisma
+    model Generation {
+      id                String   @id @default(cuid())
+      orgId             String   // Clerk organization ID
+      voiceId           String?
+      voice             Voice?   @relation(fields: [voiceId], references: [id], onDelete: SetNull)
+      text              String   // Input text prompt
+      voiceName         String   // Snapshot of voice name at generation time
+      r2ObjectKey       String?  // Path to generated audio in R2
+      temperature       Float    // Creativity (0.0 - 2.0)
+      topP              Float    // Nucleus sampling (0.0 - 1.0)
+      topK              Int      // Top-K sampling (1 - 10000)
+      repetitionPenalty Float    // Repetition penalty (1.0 - 2.0)
+      createdAt         DateTime @default(now())
+      updatedAt         DateTime @updatedAt
+      
+      @@index([orgId])
+      @@index([voiceId])
+    }
+    ```
+    
+    **Key fields:**
+    - `orgId` - Required for multi-tenant data isolation
+    - `voiceId` - Reference to Voice (nullable, set to null if voice is deleted)
+    - `voiceName` - Preserved even if voice is deleted
+    - `r2ObjectKey` - Path to generated WAV file
+    
+    Defined in `prisma/schema.prisma:57`.
+  </Accordion>
+</AccordionGroup>
+
+### Enums
+
+<CodeGroup>
+```prisma VoiceVariant
+enum VoiceVariant {
+  SYSTEM  // Pre-seeded, available to all users
+  CUSTOM  // User-uploaded or recorded
+}
+```
+
+```prisma VoiceCategory
+enum VoiceCategory {
+  AUDIOBOOK
+  CONVERSATIONAL
+  CUSTOMER_SERVICE
+  GENERAL
+  NARRATIVE
+  CHARACTERS
+  MEDITATION
+  MOTIVATIONAL
+  PODCAST
+  ADVERTISING
+  VOICEOVER
+  CORPORATE
+}
+```
+</CodeGroup>
+
+Defined in `prisma/schema.prisma:16` and `prisma/schema.prisma:21`.
+
+## Database Configuration
+
+### Connection Setup
+
+Prisma connects using the `@prisma/adapter-pg` PostgreSQL adapter for optimal Next.js compatibility:
+
+```typescript src/lib/db.ts
+import { PrismaClient } from "@/generated/prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { env } from "./env";
+
+const adapter = new PrismaPg({
+  connectionString: env.DATABASE_URL,
+});
+
+const globalForPrisma = global as unknown as { prisma: PrismaClient };
+
+const prisma = globalForPrisma.prisma || new PrismaClient({ adapter });
+
+// Prevent multiple instances in development (hot reload)
+if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+
+export { prisma };
+```
+
+Defined in `src/lib/db.ts:1`.
+
+### Prisma Configuration
+
+```typescript prisma.config.ts
+import "dotenv/config";
+import { defineConfig } from "prisma/config";
+
+export default defineConfig({
+  schema: "prisma/schema.prisma",
+  migrations: {
+    path: "prisma/migrations",
+    seed: "tsx scripts/seed-system-voices.ts",
+  },
+  datasource: {
+    url: process.env["DATABASE_URL"],
+  },
+});
+```
+
+**Key settings:**
+- `seed` - Runs `scripts/seed-system-voices.ts:1` when executing `npx prisma db seed`
+- Custom output directory: `src/generated/prisma` (defined in `prisma/schema.prisma:9`)
+
+## Migrations
+
+### Initial Migration
+
+The project includes one migration that creates all tables:
+
+```sql prisma/migrations/20260222040408_init/migration.sql
+-- CreateEnum
+CREATE TYPE "VoiceVariant" AS ENUM ('SYSTEM', 'CUSTOM');
+
+CREATE TYPE "VoiceCategory" AS ENUM (
+  'AUDIOBOOK', 'CONVERSATIONAL', 'CUSTOMER_SERVICE',
+  'GENERAL', 'NARRATIVE', 'CHARACTERS', 'MEDITATION',
+  'MOTIVATIONAL', 'PODCAST', 'ADVERTISING', 'VOICEOVER', 'CORPORATE'
+);
+
+-- CreateTable
+CREATE TABLE "Voice" (
+  "id" TEXT NOT NULL,
+  "orgId" TEXT,
+  "name" TEXT NOT NULL,
+  "description" TEXT,
+  "category" "VoiceCategory" NOT NULL DEFAULT 'GENERAL',
+  "language" TEXT NOT NULL DEFAULT 'en-US',
+  "variant" "VoiceVariant" NOT NULL,
+  "r2ObjectKey" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL,
+  CONSTRAINT "Voice_pkey" PRIMARY KEY ("id")
+);
+
+-- Indexes and foreign keys...
+```
+
+### Running Migrations
+
+<Tabs>
+  <Tab title="Deploy (Recommended)">
+    Apply migrations without prompts (ideal for CI/CD):
+    
+    ```bash
+    npx prisma migrate deploy
+    ```
+  </Tab>
+  
+  <Tab title="Dev">
+    Apply migrations in development with interactive prompts:
+    
+    ```bash
+    npx prisma migrate dev
+    ```
+    
+    <Warning>
+      This will prompt to reset the database if migrations are out of sync.
+    </Warning>
+  </Tab>
+  
+  <Tab title="Create New">
+    Generate a new migration after schema changes:
+    
+    ```bash
+    npx prisma migrate dev --name add_new_field
+    ```
+  </Tab>
+</Tabs>
+
+## Voice Seeding
+
+The seed script populates the database with 20 system voices and uploads their audio files to R2.
+
+### Seed Process
+
+```typescript scripts/seed-system-voices.ts
+// 1. Read voice metadata
+const systemVoiceMetadata: Record<string, VoiceMetadata> = {
+  Aaron: {
+    description: "Soothing and calm, like a self-help audiobook narrator",
+    category: "AUDIOBOOK",
+    language: "en-US",
+  },
+  Abigail: {
+    description: "Friendly and conversational with a warm, approachable tone",
+    category: "CONVERSATIONAL",
+    language: "en-GB",
+  },
+  // ... 18 more voices
+};
+
+// 2. For each voice:
+//    - Read WAV file from scripts/system-voices/
+//    - Upload to R2 at voices/system/{voiceId}
+//    - Create Voice record in database
+```
+
+Defined in `scripts/seed-system-voices.ts:54`.
+
+### System Voices
+
+All 20 system voices included:
+
+<AccordionGroup>
+  <Accordion title="View All Voices" icon="list">
+    | Name | Category | Language | Description |
+    |------|----------|----------|-------------|
+    | Aaron | Audiobook | en-US | Soothing and calm |
+    | Abigail | Conversational | en-GB | Friendly and warm |
+    | Anaya | Customer Service | en-IN | Polite and professional |
+    | Andy | General | en-US | Versatile and clear |
+    | Archer | Narrative | en-US | Laid-back storytelling |
+    | Brian | Customer Service | en-US | Professional and helpful |
+    | Chloe | Corporate | en-AU | Bright and bubbly |
+    | Dylan | General | en-US | Thoughtful and intimate |
+    | Emmanuel | Characters | en-US | Quirky and distinctive |
+    | Ethan | Voiceover | en-US | Polished and warm |
+    | Evelyn | Conversational | en-US | Southern charm |
+    | Gavin | Meditation | en-US | Calm and reassuring |
+    | Gordon | Motivational | en-US | Warm and encouraging |
+    | Ivan | Characters | ru-RU | Deep and cinematic |
+    | Laura | Conversational | en-US | Authentic Midwestern |
+    | Lucy | Customer Service | en-US | Direct and composed |
+    | Madison | Podcast | en-US | Energetic and chatty |
+    | Marisol | Advertising | en-US | Confident and persuasive |
+    | Meera | Customer Service | en-IN | Friendly and helpful |
+    | Walter | Narrative | en-US | Old and raspy, wise |
+  </Accordion>
+</AccordionGroup>
+
+### Running the Seed
+
+```bash
+npx prisma db seed
+```
+
+**What it does:**
+1. Reads 20 WAV files from `scripts/system-voices/`
+2. Uploads each to R2 at `voices/system/{voiceId}`
+3. Creates Voice records with metadata from `scripts/seed-system-voices.ts:54`
+4. Skips existing voices (idempotent)
+
+<Note>
+  Voice WAV files originate from [Modal's voice sample pack](https://modal-cdn.com/blog/audio/chatterbox-tts-voices.zip).
+</Note>
+
+## Prisma Commands
+
+### Essential Commands
+
+```bash
+# Generate Prisma Client
+npx prisma generate
+
+# Deploy migrations
+npx prisma migrate deploy
+
+# Seed database
+npx prisma db seed
+
+# Open Prisma Studio (GUI)
+npx prisma studio
+
+# Validate schema
+npx prisma validate
+
+# Reset database (⚠️ destructive)
+npx prisma migrate reset
+```
+
+### Development Workflow
+
+<Steps>
+  <Step title="Modify schema">
+    Edit `prisma/schema.prisma`:
+    
+    ```prisma
+    model Voice {
+      // ... existing fields
+      customField String? // Add new field
+    }
+    ```
+  </Step>
+  
+  <Step title="Create migration">
+    ```bash
+    npx prisma migrate dev --name add_custom_field
+    ```
+  </Step>
+  
+  <Step title="Generate client">
+    ```bash
+    npx prisma generate
+    ```
+    
+    TypeScript types are automatically updated.
+  </Step>
+</Steps>
+
+## Multi-Tenancy
+
+Resonance uses Clerk Organizations for multi-tenancy with database-level isolation.
+
+### Data Isolation
+
+**System voices** (`variant: SYSTEM`):
+- `orgId` is `null`
+- Visible to all organizations
+- Read-only for users
+
+**Custom voices** (`variant: CUSTOM`):
+- `orgId` matches Clerk organization ID
+- Only visible within the organization
+- Full CRUD access
+
+**Generations:**
+- Always scoped to `orgId`
+- Never shared across organizations
+
+### Example Query
+
+```typescript
+// Get all voices for an organization (system + custom)
+const voices = await prisma.voice.findMany({
+  where: {
+    OR: [
+      { variant: "SYSTEM" },           // All system voices
+      { variant: "CUSTOM", orgId },    // Org's custom voices
+    ],
+  },
+});
+```
+
+Defined in tRPC routers under `src/trpc/routers/`.
+
+## Connection Pooling
+
+For serverless deployments (Vercel, Railway), use connection pooling:
+
+### Prisma Postgres
+
+Automatically includes connection pooling - no configuration needed.
+
+### Other Providers
+
+Use Prisma Accelerate or a direct pooler:
+
+```env
+# Pooled connection
+DATABASE_URL="postgresql://pooler:password@pooler.host:5432/db"
+
+# Or use Prisma Accelerate
+DATABASE_URL="prisma://accelerate.prisma-data.net/?api_key=..."
+```
+
+## Troubleshooting
+
+### Migration errors
+
+```
+Error: P3009: Failed to apply migration
+```
+
+**Solution:** Reset and reapply:
+```bash
+npx prisma migrate reset
+npx prisma migrate deploy
+```
+
+### Generated client not found
+
+```
+Cannot find module '@/generated/prisma/client'
+```
+
+**Solution:**
+```bash
+npx prisma generate
+```
+
+### Seed fails with R2 error
+
+Ensure R2 environment variables are set before running seed:
+
+```bash
+# Check .env.local contains:
+R2_ACCOUNT_ID="..."
+R2_ACCESS_KEY_ID="..."
+R2_SECRET_ACCESS_KEY="..."
+R2_BUCKET_NAME="..."
+```
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Environment Variables" icon="key" href="/configuration/environment-variables">
+    Required env vars for database connection
+  </Card>
+  <Card title="Cloudflare R2" icon="cloud" href="/configuration/cloudflare-r2">
+    Audio file storage for voices
+  </Card>
+</CardGroup>

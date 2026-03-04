@@ -1,0 +1,680 @@
+---
+title: Database Schema
+description: Prisma schema documentation with model relationships and best practices
+icon: database
+---
+
+Resonance uses PostgreSQL with Prisma ORM. This guide covers the database schema, model relationships, and common query patterns.
+
+## Schema Overview
+
+The database schema is defined in `prisma/schema.prisma` and consists of two core models:
+
+<CardGroup cols={2}>
+  <Card title="Voice" icon="waveform">
+    System and custom voice profiles with audio references
+  </Card>
+  <Card title="Generation" icon="microphone">
+    Text-to-speech generation history with parameters
+  </Card>
+</CardGroup>
+
+## Prisma Configuration
+
+```prisma
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+```
+
+<Info>
+  The Prisma client is generated to `src/generated/prisma` to separate generated code from application code.
+</Info>
+
+## Models
+
+### Voice Model
+
+Stores both system-provided and user-uploaded custom voices.
+
+<CodeGroup>
+```prisma Schema Definition
+model Voice {
+  id String @id @default(cuid())
+
+  orgId String?  // null for SYSTEM voices, populated for CUSTOM
+
+  name        String
+  description String?
+  category    VoiceCategory @default(GENERAL)
+  language    String        @default("en-US")
+  variant     VoiceVariant
+  r2ObjectKey String?       // Cloudflare R2 object key
+
+  generations Generation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([variant])
+  @@index([orgId])
+}
+```
+
+```typescript TypeScript Type
+import type { Voice } from "@/generated/prisma/client";
+
+// Example usage
+const voice: Voice = {
+  id: "clx123abc",
+  orgId: "org_456",
+  name: "Professional Male",
+  description: "Clear corporate voice",
+  category: "CORPORATE",
+  language: "en-US",
+  variant: "CUSTOM",
+  r2ObjectKey: "voices/orgs/org_456/clx123abc",
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+```
+</CodeGroup>
+
+#### Voice Fields
+
+<Accordion title="id (String)">
+  Primary key using CUID (Collision-resistant Unique Identifier).
+  
+  ```typescript
+  id: "clx1a2b3c4d5e6f7g8h9"
+  ```
+</Accordion>
+
+<Accordion title="orgId (String | null)">
+  Organization identifier from Clerk. `null` for system voices, populated for custom voices.
+  
+  ```typescript
+  orgId: "org_2aBC3dEF4gHI5jKL6mNO"  // Custom voice
+  orgId: null                         // System voice
+  ```
+  
+  **Index**: Optimized for queries filtering by organization.
+</Accordion>
+
+<Accordion title="name (String)">
+  Display name for the voice.
+  
+  ```typescript
+  name: "Aaron"              // System voice
+  name: "CEO Announcements"  // Custom voice
+  ```
+</Accordion>
+
+<Accordion title="description (String | null)">
+  Optional description of voice characteristics.
+  
+  ```typescript
+  description: "Soothing and calm, like a self-help audiobook narrator"
+  ```
+</Accordion>
+
+<Accordion title="category (VoiceCategory)">
+  Voice categorization for filtering and organization. See [Voice Categories](#voice-categories).
+  
+  ```typescript
+  category: "AUDIOBOOK" | "CONVERSATIONAL" | "CUSTOMER_SERVICE" | ...
+  ```
+</Accordion>
+
+<Accordion title="language (String)">
+  Language code (defaults to "en-US").
+  
+  ```typescript
+  language: "en-US" | "en-GB" | "en-IN" | "en-AU" | "ru-RU"
+  ```
+</Accordion>
+
+<Accordion title="variant (VoiceVariant)">
+  Distinguishes system-provided from user-uploaded voices. See [Voice Variants](#voice-variants).
+  
+  ```typescript
+  variant: "SYSTEM" | "CUSTOM"
+  ```
+  
+  **Index**: Optimized for queries separating system and custom voices.
+</Accordion>
+
+<Accordion title="r2ObjectKey (String | null)">
+  Cloudflare R2 object storage key for the audio file.
+  
+  ```typescript
+  r2ObjectKey: "voices/system/clx123"          // System voice
+  r2ObjectKey: "voices/orgs/org_456/clx789"   // Custom voice
+  ```
+  
+  `null` until audio is uploaded successfully.
+</Accordion>
+
+<Accordion title="generations (Generation[])">
+  One-to-many relationship with generations using this voice.
+  
+  ```prisma
+  generations Generation[]
+  ```
+</Accordion>
+
+### Generation Model
+
+Stores TTS generation history with full parameters for reproducibility.
+
+<CodeGroup>
+```prisma Schema Definition
+model Generation {
+  id String @id @default(cuid())
+
+  orgId String
+
+  voiceId String?
+  voice   Voice?  @relation(fields: [voiceId], references: [id], onDelete: SetNull)
+
+  text              String
+  voiceName         String  // Denormalized for history
+  r2ObjectKey       String?
+  temperature       Float
+  topP              Float
+  topK              Int
+  repetitionPenalty Float
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([voiceId])
+}
+```
+
+```typescript TypeScript Type
+import type { Generation } from "@/generated/prisma/client";
+
+const generation: Generation = {
+  id: "clx987xyz",
+  orgId: "org_456",
+  voiceId: "clx123abc",
+  text: "Welcome to Resonance, the text to speech platform.",
+  voiceName: "Professional Male",
+  r2ObjectKey: "generations/orgs/org_456/clx987xyz",
+  temperature: 0.8,
+  topP: 0.95,
+  topK: 1000,
+  repetitionPenalty: 1.2,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+```
+</CodeGroup>
+
+#### Generation Fields
+
+<Accordion title="id (String)">
+  Primary key using CUID.
+</Accordion>
+
+<Accordion title="orgId (String)">
+  Organization that created the generation. Always required.
+  
+  **Index**: Optimized for fetching user's generation history.
+</Accordion>
+
+<Accordion title="voiceId (String | null) & voice (Voice | null)">
+  Foreign key to Voice model with `onDelete: SetNull`.
+  
+  ```prisma
+  voice Voice? @relation(fields: [voiceId], references: [id], onDelete: SetNull)
+  ```
+  
+  If the voice is deleted, `voiceId` becomes `null` but the generation is preserved.
+  
+  **Index**: Optimized for voice-specific queries.
+</Accordion>
+
+<Accordion title="text (String)">
+  The input text that was converted to speech.
+  
+  ```typescript
+  text: "Welcome to our platform. We're excited to have you here."
+  ```
+  
+  Max length enforced at application layer: `TEXT_MAX_LENGTH = 5000` characters.
+</Accordion>
+
+<Accordion title="voiceName (String)">
+  Denormalized voice name for historical reference.
+  
+  ```typescript
+  voiceName: "Professional Male"
+  ```
+  
+  Preserved even if the original voice is deleted.
+</Accordion>
+
+<Accordion title="r2ObjectKey (String | null)">
+  Cloudflare R2 storage key for generated audio.
+  
+  ```typescript
+  r2ObjectKey: "generations/orgs/org_456/clx987xyz"
+  ```
+</Accordion>
+
+<Accordion title="TTS Parameters">
+  Generation parameters for reproducibility:
+  
+  ```typescript
+  temperature: 0.8        // Range: 0-2, controls randomness
+  topP: 0.95             // Range: 0-1, nucleus sampling
+  topK: 1000             // Range: 1-10000, top-k sampling
+  repetitionPenalty: 1.2 // Range: 1-2, prevents repetition
+  ```
+  
+  These are stored to allow users to reproduce or adjust previous generations.
+</Accordion>
+
+## Enums
+
+### Voice Variants
+
+```prisma
+enum VoiceVariant {
+  SYSTEM   // Pre-loaded voices available to all users
+  CUSTOM   // User-uploaded voices (org-specific)
+}
+```
+
+<CodeGroup>
+```typescript Usage in Queries
+// Get all system voices
+const systemVoices = await prisma.voice.findMany({
+  where: { variant: "SYSTEM" },
+});
+
+// Get user's custom voices
+const customVoices = await prisma.voice.findMany({
+  where: {
+    variant: "CUSTOM",
+    orgId: ctx.orgId,
+  },
+});
+```
+
+```typescript Pattern: Dual Voice Lists
+// Common pattern: separate system and custom voices
+const [custom, system] = await Promise.all([
+  prisma.voice.findMany({
+    where: { variant: "CUSTOM", orgId: ctx.orgId },
+    orderBy: { createdAt: "desc" },
+  }),
+  prisma.voice.findMany({
+    where: { variant: "SYSTEM" },
+    orderBy: { name: "asc" },
+  }),
+]);
+
+return { custom, system };
+```
+</CodeGroup>
+
+### Voice Categories
+
+```prisma
+enum VoiceCategory {
+  AUDIOBOOK
+  CONVERSATIONAL
+  CUSTOMER_SERVICE
+  GENERAL
+  NARRATIVE
+  CHARACTERS
+  MEDITATION
+  MOTIVATIONAL
+  PODCAST
+  ADVERTISING
+  VOICEOVER
+  CORPORATE
+}
+```
+
+<Info>
+  Category labels are defined in `src/features/voices/data/voice-categories.ts`:
+  
+  ```typescript
+  export const VOICE_CATEGORY_LABELS: Record<VoiceCategory, string> = {
+    AUDIOBOOK: "Audiobook",
+    CONVERSATIONAL: "Conversational",
+    CUSTOMER_SERVICE: "Customer Service",
+    // ...
+  };
+  ```
+</Info>
+
+## Relationships
+
+### Voice → Generation (One-to-Many)
+
+```prisma
+// Voice model
+generations Generation[]
+
+// Generation model
+voiceId String?
+voice   Voice?  @relation(fields: [voiceId], references: [id], onDelete: SetNull)
+```
+
+**Deletion Behavior**: `onDelete: SetNull`
+
+- When a voice is deleted, related generations are preserved
+- `voiceId` is set to `null`
+- `voiceName` retains the historical voice name
+- Audio files remain accessible via `r2ObjectKey`
+
+<CodeGroup>
+```typescript Query with Relation
+// Fetch generation with voice details
+const generation = await prisma.generation.findUnique({
+  where: { id: generationId },
+  include: {
+    voice: {
+      select: {
+        name: true,
+        category: true,
+      },
+    },
+  },
+});
+
+// Result:
+// {
+//   id: "clx987",
+//   text: "Hello world",
+//   voice: { name: "Aaron", category: "AUDIOBOOK" }
+// }
+```
+
+```typescript Count Generations per Voice
+const voicesWithCounts = await prisma.voice.findMany({
+  include: {
+    _count: {
+      select: { generations: true },
+    },
+  },
+});
+
+// Result:
+// [{ id: "clx123", name: "Aaron", _count: { generations: 42 } }]
+```
+</CodeGroup>
+
+## Common Query Patterns
+
+### Filtering Voices
+
+<CodeGroup>
+```typescript Search Voices
+const voices = await prisma.voice.findMany({
+  where: {
+    OR: [
+      { name: { contains: query, mode: "insensitive" } },
+      { description: { contains: query, mode: "insensitive" } },
+    ],
+    variant: "SYSTEM",
+  },
+});
+```
+
+```typescript Filter by Category
+const audioBookVoices = await prisma.voice.findMany({
+  where: {
+    category: "AUDIOBOOK",
+    variant: "SYSTEM",
+  },
+  orderBy: { name: "asc" },
+});
+```
+
+```typescript User's Custom Voices Only
+const customVoices = await prisma.voice.findMany({
+  where: {
+    variant: "CUSTOM",
+    orgId: ctx.orgId,
+  },
+  orderBy: { createdAt: "desc" },
+});
+```
+</CodeGroup>
+
+### Safe Deletion with Cleanup
+
+<CodeGroup>
+```typescript Delete Voice with R2 Cleanup
+import { prisma } from "@/lib/db";
+import { deleteAudio } from "@/lib/r2";
+
+const voice = await prisma.voice.findUnique({
+  where: {
+    id: input.id,
+    variant: "CUSTOM",
+    orgId: ctx.orgId,
+  },
+  select: { id: true, r2ObjectKey: true },
+});
+
+if (!voice) {
+  throw new TRPCError({
+    code: "NOT_FOUND",
+    message: "Voice not found",
+  });
+}
+
+// Delete from database first
+await prisma.voice.delete({ where: { id: voice.id } });
+
+// Clean up storage (fire-and-forget)
+if (voice.r2ObjectKey) {
+  await deleteAudio(voice.r2ObjectKey).catch(() => {});
+}
+```
+</CodeGroup>
+
+<Note>
+  Always delete from the database first, then clean up storage. This prevents orphaned database records if storage deletion fails.
+</Note>
+
+### Pagination
+
+<CodeGroup>
+```typescript Cursor-Based Pagination
+const generations = await prisma.generation.findMany({
+  where: { orgId: ctx.orgId },
+  take: 20,
+  skip: 1, // Skip the cursor
+  cursor: cursor ? { id: cursor } : undefined,
+  orderBy: { createdAt: "desc" },
+});
+```
+
+```typescript Offset Pagination
+const page = 1;
+const pageSize = 20;
+
+const [generations, total] = await Promise.all([
+  prisma.generation.findMany({
+    where: { orgId: ctx.orgId },
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+    orderBy: { createdAt: "desc" },
+  }),
+  prisma.generation.count({
+    where: { orgId: ctx.orgId },
+  }),
+]);
+```
+</CodeGroup>
+
+### Omit Sensitive Fields
+
+```typescript
+const generations = await prisma.generation.findMany({
+  where: { orgId: ctx.orgId },
+  omit: {
+    orgId: true,      // Don't expose to client
+    r2ObjectKey: true, // Use signed URLs instead
+  },
+});
+```
+
+## Data Migrations
+
+### Creating Migrations
+
+<Steps>
+  <Step title="Edit Schema">
+    Modify `prisma/schema.prisma`
+  </Step>
+  
+  <Step title="Create Migration">
+    ```bash
+    npx prisma migrate dev --name add_voice_gender
+    ```
+  </Step>
+  
+  <Step title="Review SQL">
+    Check generated SQL in `prisma/migrations/[timestamp]_add_voice_gender/migration.sql`
+  </Step>
+  
+  <Step title="Generate Client">
+    ```bash
+    npx prisma generate
+    ```
+    TypeScript types are automatically updated.
+  </Step>
+</Steps>
+
+### Seeding System Voices
+
+System voices are seeded using `scripts/seed-system-voices.ts`:
+
+```bash
+npm run db:seed
+```
+
+<CodeGroup>
+```typescript Seed Script Pattern
+// scripts/seed-system-voices.ts
+import { prisma } from "../src/lib/db";
+
+async function seedSystemVoice(name: string) {
+  const voice = await prisma.voice.create({
+    data: {
+      name,
+      variant: "SYSTEM",
+      orgId: null,
+      description: systemVoiceMetadata[name].description,
+      category: systemVoiceMetadata[name].category,
+      language: systemVoiceMetadata[name].language,
+    },
+  });
+
+  const r2ObjectKey = `voices/system/${voice.id}`;
+  
+  await uploadSystemVoiceAudio({ key: r2ObjectKey, buffer, contentType });
+  
+  await prisma.voice.update({
+    where: { id: voice.id },
+    data: { r2ObjectKey },
+  });
+}
+```
+</CodeGroup>
+
+## Database Client Usage
+
+### Initialization
+
+```typescript
+// src/lib/db.ts
+import { PrismaClient } from "@/generated/prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+
+const adapter = new PrismaPg({
+  connectionString: env.DATABASE_URL,
+});
+
+const prisma = new PrismaClient({ adapter });
+
+export { prisma };
+```
+
+<Info>
+  The Prisma PostgreSQL adapter (`@prisma/adapter-pg`) is used for better connection pooling and edge runtime support.
+</Info>
+
+### Transaction Pattern
+
+```typescript
+await prisma.$transaction(async (tx) => {
+  const voice = await tx.voice.create({
+    data: { name, variant: "CUSTOM", orgId },
+  });
+
+  const generation = await tx.generation.create({
+    data: {
+      text: "Test",
+      voiceId: voice.id,
+      voiceName: voice.name,
+      orgId,
+    },
+  });
+
+  return { voice, generation };
+});
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Index by Query Patterns" icon="magnifying-glass">
+    Add indexes for frequently filtered fields:
+    ```prisma
+    @@index([variant])
+    @@index([orgId])
+    ```
+  </Card>
+  
+  <Card title="Omit Sensitive Data" icon="eye-slash">
+    Use `omit` to exclude fields from client responses:
+    ```typescript
+    omit: { r2ObjectKey: true }
+    ```
+  </Card>
+  
+  <Card title="Denormalize for History" icon="clock">
+    Store `voiceName` to preserve history even if voice is deleted.
+  </Card>
+  
+  <Card title="Soft Delete vs SetNull" icon="trash">
+    Use `onDelete: SetNull` for historical records that should persist.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Project Structure" icon="folder-tree" href="/guides/project-structure">
+    Learn about codebase organization
+  </Card>
+  <Card title="Extending Features" icon="puzzle-piece" href="/guides/extending-features">
+    Add new models, fields, and relationships
+  </Card>
+</CardGroup>

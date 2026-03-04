@@ -68,7 +68,7 @@
         "groups": [
           {
             "group": "Overview",
-            "pages": ["api/introduction", "api/authentication"]
+            "pages": ["api/introduction", "api/authentication", "api/rest-endpoints"]
           },
           {
             "group": "tRPC Routers",

@@ -1,0 +1,248 @@
+---
+title: REST API Endpoints
+description: HTTP endpoints for audio streaming and voice uploads
+---
+
+In addition to the tRPC API, Resonance exposes a few REST endpoints for binary data operations like audio streaming and file uploads.
+
+## Audio Streaming
+
+### Get Generation Audio
+
+Retrieve the generated audio file for a specific generation.
+
+```http
+GET /api/audio/{generationId}
+```
+
+<ParamField path="generationId" type="string" required>
+  The unique identifier of the generation
+</ParamField>
+
+**Authentication**: Requires Clerk session cookie. The generation must belong to your organization.
+
+**Response**:
+- **Content-Type**: `audio/wav`
+- **Cache-Control**: `private, max-age=3600`
+- **Body**: Audio file binary data
+
+**Status Codes**:
+- `200` - Success, audio returned
+- `401` - Unauthorized (no valid session)
+- `404` - Generation not found or doesn't belong to your organization
+- `409` - Audio not yet available (generation still processing)
+- `502` - Failed to fetch audio from R2 storage
+
+**Example**:
+
+```typescript
+const generationId = "clx1234567890";
+const audioUrl = `/api/audio/${generationId}`;
+
+// Use in an audio element
+<audio src={audioUrl} controls />
+
+// Or fetch directly
+const response = await fetch(audioUrl);
+const blob = await response.blob();
+const audioObjectUrl = URL.createObjectURL(blob);
+```
+
+### Get Voice Audio
+
+Retrieve the reference audio file for a specific voice (system or custom).
+
+```http
+GET /api/voices/{voiceId}
+```
+
+<ParamField path="voiceId" type="string" required>
+  The unique identifier of the voice
+</ParamField>
+
+**Authentication**: Requires Clerk session cookie. Custom voices must belong to your organization.
+
+**Response**:
+- **Content-Type**: Varies (e.g., `audio/wav`, `audio/mpeg`)
+- **Cache-Control**: 
+  - System voices: `public, max-age=86400` (24 hours)
+  - Custom voices: `private, max-age=3600` (1 hour)
+- **Body**: Audio file binary data
+
+**Status Codes**:
+- `200` - Success, audio returned
+- `401` - Unauthorized (no valid session)
+- `404` - Voice not found or custom voice doesn't belong to your organization
+- `409` - Voice audio not yet available (upload still processing)
+- `502` - Failed to fetch audio from R2 storage
+
+**Example**:
+
+```typescript
+const voiceId = "clx9876543210";
+
+// Preview voice in UI
+<audio src={`/api/voices/${voiceId}`} controls />
+```
+
+## Voice Upload
+
+### Create Custom Voice
+
+Upload an audio file to create a custom voice clone.
+
+```http
+POST /api/voices/create?name={name}&category={category}&language={language}&description={description}
+Content-Type: audio/wav (or other audio format)
+Body: <audio file binary>
+```
+
+<ParamField query="name" type="string" required>
+  Display name for the voice (minimum 1 character)
+</ParamField>
+
+<ParamField query="category" type="string" required>
+  Voice category. Must be one of: `AUDIOBOOK`, `CONVERSATIONAL`, `CUSTOMER_SERVICE`, `GENERAL`, `NARRATIVE`, `CHARACTERS`, `MEDITATION`, `MOTIVATIONAL`, `PODCAST`, `ADVERTISING`, `VOICEOVER`, `CORPORATE`
+</ParamField>
+
+<ParamField query="language" type="string" required>
+  BCP 47 language code (e.g., `en-US`, `es-ES`, `fr-FR`)
+</ParamField>
+
+<ParamField query="description" type="string">
+  Optional description of the voice
+</ParamField>
+
+**Authentication**: Requires Clerk session cookie and active Polar subscription.
+
+**Request Headers**:
+- `Content-Type`: The MIME type of the audio file (e.g., `audio/wav`, `audio/mpeg`, `audio/mp3`, `audio/ogg`)
+
+**Constraints**:
+- **Maximum file size**: 20 MB
+- **Minimum duration**: 10 seconds
+- **Subscription required**: Voice creation requires an active Polar subscription
+
+**Response**:
+
+<ResponseField name="name" type="string">
+  The name of the created voice
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Success message
+</ResponseField>
+
+**Status Codes**:
+- `201` - Voice created successfully
+- `400` - Invalid input (missing parameters, invalid category, missing Content-Type, or empty file)
+- `401` - Unauthorized (no valid session)
+- `403` - Subscription required (`SUBSCRIPTION_REQUIRED` error)
+- `413` - File too large (exceeds 20 MB)
+- `422` - Invalid audio file or duration too short
+- `500` - Server error during voice creation
+
+**Example**:
+
+```typescript
+async function createVoice(audioFile: File) {
+  const params = new URLSearchParams({
+    name: "My Custom Voice",
+    category: "GENERAL",
+    language: "en-US",
+    description: "A friendly voice for customer support"
+  });
+
+  const response = await fetch(`/api/voices/create?${params.toString()}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": audioFile.type,
+    },
+    body: audioFile,
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || "Failed to create voice");
+  }
+
+  const data = await response.json();
+  console.log("Voice created:", data.name);
+}
+```
+
+**Validation Rules**:
+
+From the source code (`src/app/api/voices/create/route.ts:10-18`):
+
+```typescript
+const createVoiceSchema = z.object({
+  name: z.string().min(1, "Voice name is required"),
+  category: z.enum(VOICE_CATEGORIES),
+  language: z.string().min(1, "Language is required"),
+  description: z.string().nullish(),
+});
+```
+
+**Audio Validation**:
+
+The endpoint validates audio files using `music-metadata` to:
+1. Confirm the file is valid audio
+2. Extract duration metadata
+3. Ensure duration meets the 10-second minimum
+
+**Storage**:
+
+Created voice audio is stored in R2 at: `voices/orgs/{orgId}/{voiceId}`
+
+**Usage Metering**:
+
+Voice creation events are tracked in Polar with the event name `voice_creation`.
+
+## Error Handling
+
+All endpoints return JSON error responses with this structure:
+
+```typescript
+{
+  "error": string  // Human-readable error message
+}
+```
+
+For validation errors on `/api/voices/create`, the response includes detailed issues:
+
+```typescript
+{
+  "error": "Invalid input",
+  "issues": [
+    {
+      "code": "invalid_enum_value",
+      "message": "Invalid category",
+      "path": ["category"]
+    }
+  ]
+}
+```
+
+## Security
+
+All endpoints require authentication via Clerk session cookies. Custom voices and generations are scoped to the authenticated user's organization (`orgId`), ensuring data isolation in the multi-tenant architecture.
+
+System voices (built-in) are publicly accessible to all authenticated users.
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="tRPC Routers" icon="link" href="/api/voices">
+    Voice and generation management via tRPC
+  </Card>
+  <Card title="Voice Cloning" icon="microphone" href="/features/voice-cloning">
+    Learn how to clone voices
+  </Card>
+  <Card title="Cloudflare R2" icon="cloud" href="/configuration/cloudflare-r2">
+    Configure audio storage
+  </Card>
+  <Card title="Clerk Auth" icon="shield" href="/configuration/clerk-auth">
+    Set up authentication
+  </Card>
+</CardGroup>
